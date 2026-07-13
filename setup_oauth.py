@@ -5,12 +5,15 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 # Allow insecure transport (HTTP) for local testing / oauth exchange
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
-SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/calendar.readonly",
+]
 
 
 def main():
     credentials_file = "credentials.json"
-    token_file = "token.json"
+    token_file = "tokens/token.json"
 
     if not os.path.exists(credentials_file):
         print(f"Error: '{credentials_file}' not found.")
@@ -33,12 +36,15 @@ def main():
 
     choice = input("Enter choice (1 or 2): ").strip()
 
+    os.makedirs(os.path.dirname(token_file), exist_ok=True)
+
     if choice == "1":
         print("Starting Google OAuth local server...")
         try:
             flow = InstalledAppFlow.from_client_secrets_file(credentials_file, SCOPES)
             creds = flow.run_local_server(port=0)
-            with open(token_file, "w") as token:
+            fd = os.open(token_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as token:
                 token.write(creds.to_json())
             print(f"\nSuccess! Credentials saved to '{token_file}'.")
         except Exception as e:
@@ -49,7 +55,9 @@ def main():
         flow = InstalledAppFlow.from_client_secrets_file(
             credentials_file, scopes=SCOPES, redirect_uri="http://localhost"
         )
-        auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+        auth_url, _ = flow.authorization_url(
+            prompt="select_account consent", access_type="offline"
+        )
 
         print("\n1. Visit this URL in your browser to log in:")
         print(auth_url)
@@ -74,7 +82,8 @@ def main():
             # Exchange redirect code for credentials
             flow.fetch_token(authorization_response=redirect_url)
             creds = flow.credentials
-            with open(token_file, "w") as token:
+            fd = os.open(token_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as token:
                 token.write(creds.to_json())
             print(f"\nSuccess! Credentials saved to '{token_file}'.")
         except Exception as e:

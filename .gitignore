@@ -6,3 +6,6 @@ __pycache__
 
 token.json
 credentials.json
+
+tokens/*
+!tokens/.gitkeep

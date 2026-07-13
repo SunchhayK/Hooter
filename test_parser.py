@@ -124,10 +124,84 @@ def test_query_intent_mock():
     print("✓ Query intent parsing logic works.")
 
 
+def test_reschedule_duplicate_and_collision():
+    from calendar_service import CalendarService
+    from ai_parser import ParsedEvent
+    import unittest.mock as mock
+
+    with (
+        mock.patch("calendar_service.CalendarService._load_credentials") as mock_creds,
+        mock.patch("calendar_service.build") as mock_build,
+    ):
+        service = CalendarService(user_id=999)
+        service.list_events = mock.MagicMock()
+
+        with mock.patch("calendar_service.Config") as mock_config:
+            mock_config.TIMEZONE = "UTC"
+
+            # Case 1: Duplicate detection
+            event = ParsedEvent(
+                summary="Meeting with Bob",
+                is_all_day=False,
+                start_datetime="2026-07-15T10:00:00",
+                end_datetime="2026-07-15T11:00:00",
+            )
+            # When find_reschedule_candidate searches, it looks for the summary
+            service.list_events.return_value = [
+                {
+                    "id": "123",
+                    "summary": "Meeting with Bob",
+                    "start": {"dateTime": "2026-07-15T10:00:00Z"},
+                    "end": {"dateTime": "2026-07-15T11:00:00Z"},
+                }
+            ]
+            candidate, is_dup = service.find_reschedule_candidate(event)
+            assert is_dup is True
+            assert candidate["id"] == "123"
+
+            # Case 2: Reschedule candidate detection (different time)
+            event_new_time = ParsedEvent(
+                summary="Meeting with Bob",
+                is_all_day=False,
+                start_datetime="2026-07-15T14:00:00",
+                end_datetime="2026-07-15T15:00:00",
+            )
+            candidate, is_dup = service.find_reschedule_candidate(event_new_time)
+            assert is_dup is False
+            assert candidate["id"] == "123"
+
+            # Case 3: Collision checking
+            # Mocking existing events for the new time window [14:00, 15:00]
+            # Event 1: overlapping event "Lunch"
+            # Event 2: "Meeting with Bob" itself (should be filtered out when exclude_event_id is specified)
+            service.list_events.return_value = [
+                {
+                    "id": "123",
+                    "summary": "Meeting with Bob",
+                    "start": {"dateTime": "2026-07-15T14:00:00Z"},
+                    "end": {"dateTime": "2026-07-15T15:00:00Z"},
+                },
+                {
+                    "id": "456",
+                    "summary": "Lunch",
+                    "start": {"dateTime": "2026-07-15T14:30:00Z"},
+                    "end": {"dateTime": "2026-07-15T15:30:00Z"},
+                },
+            ]
+            collisions = service.check_collisions(
+                event_new_time, exclude_event_id="123"
+            )
+            assert len(collisions) == 1
+            assert collisions[0]["id"] == "456"
+
+            print("✓ Reschedule, duplicate, and collision detection logic works.")
+
+
 if __name__ == "__main__":
     print("Running self-checks...")
     test_pydantic_schema()
     test_openai_parser_mock()
     test_gemini_parser_mock()
     test_query_intent_mock()
+    test_reschedule_duplicate_and_collision()
     print("All checks passed successfully.")

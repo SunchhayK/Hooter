@@ -6,4 +6,6 @@ services:
     env_file:
       - .env
     volumes:
-      - ./token.json:/app/token.json
+      - ./tokens:/app/tokens
+    ports:
+      - "6767:6767"
