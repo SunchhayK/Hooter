@@ -33,8 +33,15 @@ def get_timezone(tz_str: str) -> timezone | zoneinfo.ZoneInfo:
 
 
 class CalendarService:
-    def __init__(self, token_path: str = "token.json"):
-        self.token_path = token_path
+    def __init__(self, user_id: int = None, token_path: str = None):
+        if token_path is not None:
+            self.token_path = token_path
+        elif user_id is not None:
+            user_token = f"token_{user_id}.json"
+            self.token_path = user_token if os.path.exists(user_token) else "token.json"
+        else:
+            self.token_path = "token.json"
+
         self.creds = self._load_credentials()
         self.service = build("calendar", "v3", credentials=self.creds)
 
@@ -52,7 +59,7 @@ class CalendarService:
             else:
                 raise FileNotFoundError(
                     f"Valid credentials not found at {self.token_path}. "
-                    "Please run setup_oauth.py to authorize the application."
+                    "Please run /auth in Telegram or setup_oauth.py to authorize."
                 )
         return creds
 
@@ -97,3 +104,33 @@ class CalendarService:
         )
 
         return created_event.get("htmlLink", "")
+
+    def list_events(
+        self,
+        time_min: datetime = None,
+        time_max: datetime = None,
+        search_query: str = None,
+        max_results: int = 10,
+    ) -> list:
+        """List events from Google Calendar based on parameters."""
+        calendar_id = Config.GOOGLE_CALENDAR_ID
+
+        params = {
+            "calendarId": calendar_id,
+            "singleEvents": True,
+            "orderBy": "startTime",
+            "maxResults": max_results,
+        }
+
+        if time_min:
+            params["timeMin"] = time_min.isoformat()
+        if time_max:
+            params["timeMax"] = time_max.isoformat()
+        if search_query:
+            params["q"] = search_query
+
+        logger.info(
+            f"Listing events: timeMin={time_min}, timeMax={time_max}, query={search_query}"
+        )
+        events_result = self.service.events().list(**params).execute()
+        return events_result.get("items", [])

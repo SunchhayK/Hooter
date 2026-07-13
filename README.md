@@ -27,17 +27,20 @@ Bot that parses forwarded scheduling messages using AI (Gemini or OpenAI) and in
 
 4. **Authenticate Google Account**:
    - Run the helper script to complete OAuth authorization and generate `token.json`:
+
      ```bash
      python setup_oauth.py
      ```
 
 5. **Test Parser**:
    - Verify mock logic passes:
+
      ```bash
      python test_parser.py
      ```
 
 6. **Run the Bot**:
+
    ```bash
    python bot.py
    ```

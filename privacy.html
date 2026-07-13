@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - Telegram Calendar Bot</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+            color: #333;
+        }
+
+        h1 {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            margin-top: 30px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Privacy Policy</h1>
+    <p>Last updated: July 13, 2026</p>
+    <p>This Privacy Policy describes how the Telegram Calendar Bot ("we", "our", or "the Bot") handles your personal
+        data when you connect and use the Bot with your Google Calendar account.</p>
+
+    <h2>1. Information We Access</h2>
+    <p>The Bot requests access to your Google Calendar events (via the
+        <code>https://www.googleapis.com/auth/calendar.events</code> scope). This access is used solely to:</p>
+    <ul>
+        <li>Create new calendar events based on text messages or forwards you send to the Bot.</li>
+        <li>Query and list upcoming calendar events when you request them via bot commands (e.g., /today, /tomorrow,
+            /schedule).</li>
+    </ul>
+
+    <h2>2. Data Storage and Retention</h2>
+    <ul>
+        <li><strong>OAuth Tokens:</strong> When you authenticate, the authorization token (refresh and access tokens) is
+            saved locally on the secure server hosting the Bot. It is associated with your unique Telegram User ID to
+            authenticate your requests.</li>
+        <li><strong>No Third-Party Sharing:</strong> We do not sell, rent, or share your Google Calendar data,
+            credentials, or Telegram messages with any third parties.</li>
+        <li><strong>AI Processing:</strong> Messages you send to the Bot are processed using the configured AI provider
+            (Google Gemini or OpenAI) solely to parse the event details (summary, start time, end time, location). This
+            data is not used for model training.</li>
+    </ul>
+
+    <h2>3. Data Control and Deletion</h2>
+    <p>You can revoke the Bot's access to your Google Calendar at any time by:</p>
+    <ul>
+        <li>Disconnecting the application directly from your Google Account settings (Security -> Third-party apps with
+            account access).</li>
+        <li>Contacting the bot administrator to delete your stored token file.</li>
+    </ul>
+
+    <h2>4. Contact Us</h2>
+    <p>If you have any questions about this Privacy Policy, please contact the bot owner/administrator.</p>
+</body>
+
+</html>

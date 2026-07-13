@@ -35,9 +35,24 @@ class ParsedEvent(BaseModel):
     )
 
 
-class ParsedEvents(BaseModel):
-    events: List[ParsedEvent] = Field(
-        description="List of events extracted from the user's message. Can be empty if no events found."
+class AIResponse(BaseModel):
+    intent: str = Field(
+        description="Must be either 'create' (to schedule new events) or 'query' (to search/list existing events)."
+    )
+    events: Optional[List[ParsedEvent]] = Field(
+        default=None, description="Events to create. Use when intent is 'create'."
+    )
+    query_time_min: Optional[str] = Field(
+        default=None,
+        description="ISO 8601 datetime (YYYY-MM-DDTHH:MM:SS) in user local timezone. Use when intent is 'query' to filter start time.",
+    )
+    query_time_max: Optional[str] = Field(
+        default=None,
+        description="ISO 8601 datetime (YYYY-MM-DDTHH:MM:SS) in user local timezone. Use when intent is 'query' to filter end time.",
+    )
+    query_search: Optional[str] = Field(
+        default=None,
+        description="Keyword search query. Use when intent is 'query' and user is asking for a specific event/topic.",
     )
 
 
@@ -45,19 +60,22 @@ class AIParser(ABC):
     @abstractmethod
     def parse_message(
         self, text: str, reference_time_str: str, timezone: str
-    ) -> List[ParsedEvent]:
+    ) -> AIResponse:
         pass
 
     def _get_system_instruction(self, reference_time_str: str, timezone: str) -> str:
         return (
-            f"You are a scheduler assistant. Extract ALL calendar event details from the user's message.\n"
+            f"You are a calendar bot assistant. Determine the user's intent: 'create' (to add new events) or 'query' (to search/list schedule).\n"
             f"Current local time: {reference_time_str}\n"
             f"User Timezone: {timezone}\n\n"
-            f"Rules:\n"
-            f"1. Compute relative dates/times (e.g., 'tomorrow', 'next Wed at 3pm') using the Current local time.\n"
-            f"2. If no year is specified, assume it refers to the closest future occurrence of that date.\n"
-            f"3. Extract MULTIPLE events if the message contains more than one schedule or class update.\n"
-            f"4. Return the exact JSON structure matching the ParsedEvents schema containing the list of events."
+            f"Rules for intent='create':\n"
+            f"1. Extract calendar event details into the 'events' list.\n"
+            f"2. Compute relative dates/times (e.g., 'tomorrow', 'next Wed at 3pm') using the Current local time.\n"
+            f"3. Extract MULTIPLE events if the message contains more than one schedule or class update.\n\n"
+            f"Rules for intent='query':\n"
+            f"1. Set 'query_time_min' and/or 'query_time_max' to represent the requested range. For example, for 'today', set min to start of today and max to end of today. For 'tomorrow', set min to start of tomorrow and max to end of tomorrow.\n"
+            f"2. Set 'query_search' if the user asks about a specific keyword or event topic (e.g., 'when is dentist').\n"
+            f"3. Leave 'events' empty."
         )
 
 
@@ -70,7 +88,7 @@ class GeminiParser(AIParser):
 
     def parse_message(
         self, text: str, reference_time_str: str, timezone: str
-    ) -> List[ParsedEvent]:
+    ) -> AIResponse:
         from google.genai import types
 
         system_instruction = self._get_system_instruction(reference_time_str, timezone)
@@ -80,15 +98,14 @@ class GeminiParser(AIParser):
             contents=text,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=ParsedEvents,
+                response_schema=AIResponse,
                 system_instruction=system_instruction,
                 temperature=0.0,
             ),
         )
 
         data = json.loads(response.text)
-        parsed = ParsedEvents(**data)
-        return parsed.events
+        return AIResponse(**data)
 
 
 class OpenAIParser(AIParser):
@@ -100,7 +117,7 @@ class OpenAIParser(AIParser):
 
     def parse_message(
         self, text: str, reference_time_str: str, timezone: str
-    ) -> List[ParsedEvent]:
+    ) -> AIResponse:
         system_instruction = self._get_system_instruction(reference_time_str, timezone)
 
         response = self.client.beta.chat.completions.parse(
@@ -109,11 +126,11 @@ class OpenAIParser(AIParser):
                 {"role": "system", "content": system_instruction},
                 {"role": "user", "content": text},
             ],
-            response_format=ParsedEvents,
+            response_format=AIResponse,
             temperature=0.0,
         )
 
-        return response.choices[0].message.parsed.events
+        return response.choices[0].message.parsed
 
 
 class AIParserFactory:

@@ -1,6 +1,6 @@
 import json
 from unittest.mock import MagicMock
-from ai_parser import GeminiParser, OpenAIParser, ParsedEvent, ParsedEvents
+from ai_parser import GeminiParser, OpenAIParser, ParsedEvent, AIResponse
 
 
 def test_pydantic_schema():
@@ -27,7 +27,8 @@ def test_openai_parser_mock():
 
     # Mock completion object matching beta.chat.completions.parse structure
     mock_choice = MagicMock()
-    mock_choice.message.parsed = ParsedEvents(
+    mock_choice.message.parsed = AIResponse(
+        intent="create",
         events=[
             ParsedEvent(
                 summary="Lunch with Sarah",
@@ -36,7 +37,7 @@ def test_openai_parser_mock():
                 end_datetime="2026-07-14T13:00:00",
                 description="Discuss thesis",
             )
-        ]
+        ],
     )
     mock_response = MagicMock()
     mock_response.choices = [mock_choice]
@@ -49,11 +50,12 @@ def test_openai_parser_mock():
         timezone="UTC",
     )
 
-    assert len(result) == 1
-    assert result[0].summary == "Lunch with Sarah"
-    assert result[0].is_all_day is False
-    assert result[0].start_datetime == "2026-07-14T12:00:00"
-    assert result[0].description == "Discuss thesis"
+    assert result.intent == "create"
+    assert len(result.events) == 1
+    assert result.events[0].summary == "Lunch with Sarah"
+    assert result.events[0].is_all_day is False
+    assert result.events[0].start_datetime == "2026-07-14T12:00:00"
+    assert result.events[0].description == "Discuss thesis"
     print("✓ OpenAI mock parsing logic works.")
 
 
@@ -65,6 +67,7 @@ def test_gemini_parser_mock():
     mock_response = MagicMock()
     mock_response.text = json.dumps(
         {
+            "intent": "create",
             "events": [
                 {
                     "summary": "Buy groceries",
@@ -72,7 +75,7 @@ def test_gemini_parser_mock():
                     "start_date": "2026-07-15",
                     "end_date": "2026-07-16",
                 }
-            ]
+            ],
         }
     )
 
@@ -84,12 +87,41 @@ def test_gemini_parser_mock():
         timezone="UTC",
     )
 
-    assert len(result) == 1
-    assert result[0].summary == "Buy groceries"
-    assert result[0].is_all_day is True
-    assert result[0].start_date == "2026-07-15"
-    assert result[0].end_date == "2026-07-16"
+    assert result.intent == "create"
+    assert len(result.events) == 1
+    assert result.events[0].summary == "Buy groceries"
+    assert result.events[0].is_all_day is True
+    assert result.events[0].start_date == "2026-07-15"
+    assert result.events[0].end_date == "2026-07-16"
     print("✓ Gemini mock parsing logic works.")
+
+
+def test_query_intent_mock():
+    """Verify parser returns query parameters for query-based user requests."""
+    parser = OpenAIParser(api_key="mock-key", model_name="gpt-4o-mini")
+    parser.client = MagicMock()
+
+    mock_choice = MagicMock()
+    mock_choice.message.parsed = AIResponse(
+        intent="query",
+        query_time_min="2026-07-13T00:00:00",
+        query_time_max="2026-07-13T23:59:59",
+    )
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    parser.client.beta.chat.completions.parse.return_value = mock_response
+
+    result = parser.parse_message(
+        text="what do I have to do today?",
+        reference_time_str="2026-07-13 09:00:00 (Monday)",
+        timezone="UTC",
+    )
+
+    assert result.intent == "query"
+    assert result.query_time_min == "2026-07-13T00:00:00"
+    assert result.query_time_max == "2026-07-13T23:59:59"
+    print("✓ Query intent parsing logic works.")
 
 
 if __name__ == "__main__":
@@ -97,4 +129,5 @@ if __name__ == "__main__":
     test_pydantic_schema()
     test_openai_parser_mock()
     test_gemini_parser_mock()
+    test_query_intent_mock()
     print("All checks passed successfully.")
