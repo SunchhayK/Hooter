@@ -1,0 +1,9 @@
+services:
+  bot:
+    build: .
+    container_name: tg-calendar-bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./token.json:/app/token.json
