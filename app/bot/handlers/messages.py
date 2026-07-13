@@ -1,7 +1,6 @@
 """Telegram text message handler."""
 
 import logging
-import os
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -43,7 +42,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return
 
-        status_message = await message.reply_text("Exchanging authorization code...")
+        status_message = await message.reply_text(
+            "Exchanging authorization code...", reply_to_message_id=message.message_id
+        )
         try:
             flow.fetch_token(authorization_response=cleaned_text)
             creds = flow.credentials
@@ -60,5 +61,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
         return
 
-    status_message = await message.reply_text("Parsing message with AI...")
+    status_message = await message.reply_text(
+        "Parsing message with AI...", reply_to_message_id=message.message_id
+    )
     await process_and_save(user_id, text, status_message, context)

@@ -64,9 +64,13 @@ async def process_and_save(
             time_min = None
             time_max = None
             if ai_res.query_time_min:
-                time_min = datetime.fromisoformat(ai_res.query_time_min).replace(tzinfo=tz)
+                time_min = datetime.fromisoformat(ai_res.query_time_min).replace(
+                    tzinfo=tz
+                )
             if ai_res.query_time_max:
-                time_max = datetime.fromisoformat(ai_res.query_time_max).replace(tzinfo=tz)
+                time_max = datetime.fromisoformat(ai_res.query_time_max).replace(
+                    tzinfo=tz
+                )
             if not time_min and not time_max:
                 time_min = now
 
@@ -124,16 +128,28 @@ async def process_and_save(
                         f"• *Time*: {time_str}\n"
                     ),
                     parse_mode="Markdown",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("➕ Create Anyway", callback_data=f"create_reschedule_{tx_id}"),
-                        InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_reschedule_{tx_id}"),
-                    ]]),
+                    reply_markup=InlineKeyboardMarkup(
+                        [
+                            [
+                                InlineKeyboardButton(
+                                    "➕ Create Anyway",
+                                    callback_data=f"create_reschedule_{tx_id}",
+                                ),
+                                InlineKeyboardButton(
+                                    "❌ Cancel",
+                                    callback_data=f"cancel_reschedule_{tx_id}",
+                                ),
+                            ]
+                        ]
+                    ),
                 )
 
             elif candidate:
                 old_time_str = format_event_time_range(candidate, tz)
                 new_time_str = format_event_time_range(event, tz)
-                collisions = calendar.check_collisions(event, exclude_event_id=candidate["id"])
+                collisions = calendar.check_collisions(
+                    event, exclude_event_id=candidate["id"]
+                )
 
                 tx_id = f"tx_{user_id}_{int(time.time())}_{idx}"
                 context.user_data[tx_id] = {
@@ -143,19 +159,32 @@ async def process_and_save(
                 }
 
                 if collisions:
-                    context.user_data[tx_id]["colliding_ids"] = [c["id"] for c in collisions]
+                    context.user_data[tx_id]["colliding_ids"] = [
+                        c["id"] for c in collisions
+                    ]
                     col_list_str = "\n".join(
                         f"• *{c.get('summary', '(No Title)')}* ({format_event_time_range(c, tz)})"
                         for c in collisions
                     )
                     keyboard = [
                         [
-                            InlineKeyboardButton("🔄 Reschedule Anyway", callback_data=f"confirm_reschedule_{tx_id}"),
-                            InlineKeyboardButton("🤝 Merge All into One", callback_data=f"mergeall_reschedule_{tx_id}"),
+                            InlineKeyboardButton(
+                                "🔄 Reschedule Anyway",
+                                callback_data=f"confirm_reschedule_{tx_id}",
+                            ),
+                            InlineKeyboardButton(
+                                "🤝 Merge All into One",
+                                callback_data=f"mergeall_reschedule_{tx_id}",
+                            ),
                         ],
                         [
-                            InlineKeyboardButton("🗑️ Delete All Colliding", callback_data=f"deleteall_reschedule_{tx_id}"),
-                            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_reschedule_{tx_id}"),
+                            InlineKeyboardButton(
+                                "🗑️ Delete All Colliding",
+                                callback_data=f"deleteall_reschedule_{tx_id}",
+                            ),
+                            InlineKeyboardButton(
+                                "❌ Cancel", callback_data=f"cancel_reschedule_{tx_id}"
+                            ),
                         ],
                     ]
                     prompt_text = (
@@ -166,10 +195,20 @@ async def process_and_save(
                 else:
                     keyboard = [
                         [
-                            InlineKeyboardButton("🔄 Yes, Reschedule", callback_data=f"confirm_reschedule_{tx_id}"),
-                            InlineKeyboardButton("➕ No, Create New", callback_data=f"create_reschedule_{tx_id}"),
+                            InlineKeyboardButton(
+                                "🔄 Yes, Reschedule",
+                                callback_data=f"confirm_reschedule_{tx_id}",
+                            ),
+                            InlineKeyboardButton(
+                                "➕ No, Create New",
+                                callback_data=f"create_reschedule_{tx_id}",
+                            ),
                         ],
-                        [InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_reschedule_{tx_id}")],
+                        [
+                            InlineKeyboardButton(
+                                "❌ Cancel", callback_data=f"cancel_reschedule_{tx_id}"
+                            )
+                        ],
                     ]
                     prompt_text = (
                         f"🔄 *Reschedule Confirmation*\n\n"
@@ -207,16 +246,30 @@ async def process_and_save(
                             f"{col_list_str}\n\nSelect action:"
                         ),
                         parse_mode="Markdown",
-                        reply_markup=InlineKeyboardMarkup([
+                        reply_markup=InlineKeyboardMarkup(
                             [
-                                InlineKeyboardButton("➕ Create Anyway", callback_data=f"forcecreate_reschedule_{tx_id}"),
-                                InlineKeyboardButton("🤝 Merge All into One", callback_data=f"mergeall_reschedule_{tx_id}"),
-                            ],
-                            [
-                                InlineKeyboardButton("🗑️ Delete All Colliding", callback_data=f"deleteall_reschedule_{tx_id}"),
-                                InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_reschedule_{tx_id}"),
-                            ],
-                        ]),
+                                [
+                                    InlineKeyboardButton(
+                                        "➕ Create Anyway",
+                                        callback_data=f"forcecreate_reschedule_{tx_id}",
+                                    ),
+                                    InlineKeyboardButton(
+                                        "🤝 Merge All into One",
+                                        callback_data=f"mergeall_reschedule_{tx_id}",
+                                    ),
+                                ],
+                                [
+                                    InlineKeyboardButton(
+                                        "🗑️ Delete All Colliding",
+                                        callback_data=f"deleteall_reschedule_{tx_id}",
+                                    ),
+                                    InlineKeyboardButton(
+                                        "❌ Cancel",
+                                        callback_data=f"cancel_reschedule_{tx_id}",
+                                    ),
+                                ],
+                            ]
+                        ),
                     )
                 else:
                     event_link = calendar.create_event(event)
@@ -252,10 +305,13 @@ async def process_and_save(
                 [[InlineKeyboardButton("🔄 Retry", callback_data="retry")]]
             ),
         )
-    except Exception:
+    except Exception as e:
         logger.exception("Failed to parse or create event")
+        err_msg = "❌ Error processing your message. Please try again."
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            err_msg = "❌ API Limit Exceeded: Google Gemini API quota has been exhausted. Please try again later."
         await status_message.edit_text(
-            "❌ Error processing your message. Please try again.",
+            err_msg,
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton("🔄 Retry", callback_data="retry")]]
             ),

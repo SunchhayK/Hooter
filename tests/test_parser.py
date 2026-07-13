@@ -59,21 +59,23 @@ def test_openai_parser_mock():
 
 def test_gemini_parser_mock():
     """Mock Gemini SDK output and verify parsing logic."""
-    parser = GeminiParser(api_key="mock-key", model_name="gemini-2.5-flash")
+    parser = GeminiParser(api_key="mock-key", model_name="gemini-3.1-flash-lite")
     parser.client = MagicMock()
 
     mock_response = MagicMock()
-    mock_response.text = json.dumps({
-        "intent": "create",
-        "events": [
-            {
-                "summary": "Buy groceries",
-                "is_all_day": True,
-                "start_date": "2026-07-15",
-                "end_date": "2026-07-16",
-            }
-        ],
-    })
+    mock_response.text = json.dumps(
+        {
+            "intent": "create",
+            "events": [
+                {
+                    "summary": "Buy groceries",
+                    "is_all_day": True,
+                    "start_date": "2026-07-15",
+                    "end_date": "2026-07-16",
+                }
+            ],
+        }
+    )
     parser.client.models.generate_content.return_value = mock_response
 
     result = parser.parse_message(
