@@ -1,14 +1,18 @@
-import os
+"""Google Calendar service: credential management and API operations."""
+
 import logging
-import zoneinfo
+import os
 import re
-from datetime import datetime, timezone, timedelta
+import zoneinfo
+from datetime import datetime, timedelta, timezone
+
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from ai_parser import ParsedEvent
-from config import Config
+
+from app.ai.parser import ParsedEvent
+from app.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +28,6 @@ def get_timezone(tz_str: str) -> timezone | zoneinfo.ZoneInfo:
     try:
         return zoneinfo.ZoneInfo(tz_str)
     except zoneinfo.ZoneInfoNotFoundError:
-        # Match GMT/UTC offset formats like GMT+7, UTC-5, +07:00, -5
         match = re.match(r"^(?:UTC|GMT)?([+-])(\d{1,2})(?::?(\d{2}))?$", tz_str)
         if match:
             sign = 1 if match.group(1) == "+" else -1
@@ -36,8 +39,18 @@ def get_timezone(tz_str: str) -> timezone | zoneinfo.ZoneInfo:
         return timezone.utc
 
 
+def _write_token(path: str, json_str: str) -> None:
+    """Write a token file with 0o600 permissions (owner read/write only)."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json_str)
+
+
 class CalendarService:
-    def __init__(self, user_id: int = None, token_path: str = None):
+    """Wraps the Google Calendar API for a specific user's credentials."""
+
+    def __init__(self, user_id: int = None, token_path: str = None) -> None:
         if token_path is not None:
             self.token_path = token_path
         elif user_id is not None:
@@ -60,23 +73,17 @@ class CalendarService:
             if creds and creds.expired and creds.refresh_token:
                 logger.info("Google OAuth token expired. Refreshing...")
                 creds.refresh(Request())
-                os.makedirs(os.path.dirname(self.token_path), exist_ok=True)
-                fd = os.open(self.token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-                with os.fdopen(fd, "w") as token:
-                    token.write(creds.to_json())
+                _write_token(self.token_path, creds.to_json())
             else:
                 raise FileNotFoundError(
                     f"Valid credentials not found at {self.token_path}. "
-                    "Please run /auth in Telegram or setup_oauth.py to authorize."
+                    "Please run /auth in Telegram or scripts/setup_oauth.py to authorize."
                 )
         return creds
 
     def create_event(self, event: ParsedEvent) -> str:
-        """Create a calendar event and return the HTML link to it."""
-        calendar_id = Config.GOOGLE_CALENDAR_ID
-        timezone_str = Config.TIMEZONE
-
-        # Build Google Calendar event resource
+        """Create a calendar event. Returns the HTML link."""
+        tz = get_timezone(Config.TIMEZONE)
         body = {
             "summary": event.summary,
             "description": event.description or "",
@@ -85,16 +92,10 @@ class CalendarService:
 
         if event.is_all_day:
             body["start"] = {"date": event.start_date}
-            # If end_date is missing, default to same day
-            end_date = event.end_date or event.start_date
-            body["end"] = {"date": end_date}
+            body["end"] = {"date": event.end_date or event.start_date}
         else:
-            # Parse timezone to localize naive datetimes from AI
-            tz = get_timezone(timezone_str)
             try:
-                start_dt = datetime.fromisoformat(event.start_datetime).replace(
-                    tzinfo=tz
-                )
+                start_dt = datetime.fromisoformat(event.start_datetime).replace(tzinfo=tz)
                 end_dt = datetime.fromisoformat(event.end_datetime).replace(tzinfo=tz)
             except ValueError as e:
                 logger.error(
@@ -102,27 +103,21 @@ class CalendarService:
                 )
                 raise ValueError(f"Invalid datetime format received from AI: {e}")
 
-            # Google Calendar accepts ISO strings with timezone offsets
             body["start"] = {"dateTime": start_dt.isoformat()}
             body["end"] = {"dateTime": end_dt.isoformat()}
 
         logger.info(f"Creating event: {body}")
-        created_event = (
-            self.service.events().insert(calendarId=calendar_id, body=body).execute()
+        created = (
+            self.service.events()
+            .insert(calendarId=Config.GOOGLE_CALENDAR_ID, body=body)
+            .execute()
         )
-
-        return created_event.get("htmlLink", "")
+        return created.get("htmlLink", "")
 
     def find_reschedule_candidate(self, event: ParsedEvent) -> tuple[dict | None, bool]:
-        """Find an existing event with the same summary to check for duplicate or reschedule.
+        """Find existing event with the same summary; return (candidate, is_duplicate)."""
+        tz = get_timezone(Config.TIMEZONE)
 
-        Returns:
-            (candidate_event_dict, is_duplicate)
-        """
-        timezone_str = Config.TIMEZONE
-        tz = get_timezone(timezone_str)
-
-        # Parse new event times
         if event.is_all_day:
             start_dt = datetime.combine(
                 datetime.strptime(event.start_date, "%Y-%m-%d").date(),
@@ -130,21 +125,15 @@ class CalendarService:
             ).replace(tzinfo=tz)
         else:
             try:
-                start_dt = datetime.fromisoformat(event.start_datetime).replace(
-                    tzinfo=tz
-                )
+                start_dt = datetime.fromisoformat(event.start_datetime).replace(tzinfo=tz)
             except ValueError as e:
                 logger.error(f"Failed to parse datetime: start={event.start_datetime}")
                 raise ValueError(f"Invalid datetime format: {e}")
 
-        # Search window: [-30, +90] days
         now = datetime.now(tz)
-        search_min = now - timedelta(days=30)
-        search_max = now + timedelta(days=90)
-
         candidates = self.list_events(
-            time_min=search_min,
-            time_max=search_max,
+            time_min=now - timedelta(days=30),
+            time_max=now + timedelta(days=90),
             search_query=event.summary,
         )
 
@@ -158,48 +147,38 @@ class CalendarService:
 
             c_start = c.get("start", {})
             if "date" in c_start:
-                c_s_date = datetime.strptime(c_start["date"], "%Y-%m-%d").date()
-                c_s_dt = datetime.combine(c_s_date, datetime.min.time()).replace(
-                    tzinfo=tz
-                )
+                c_s_dt = datetime.combine(
+                    datetime.strptime(c_start["date"], "%Y-%m-%d").date(),
+                    datetime.min.time(),
+                ).replace(tzinfo=tz)
             else:
                 c_s_dt = datetime.fromisoformat(
                     c_start["dateTime"].replace("Z", "+00:00")
                 ).astimezone(tz)
 
-            # Check absolute difference to find closest match
             diff = abs((c_s_dt - start_dt).total_seconds())
-
             if min_diff is None or diff < min_diff:
                 min_diff = diff
                 best_candidate = c
 
         if best_candidate:
-            # Check if it is a duplicate
             c_start = best_candidate.get("start", {})
             is_dup = False
             if event.is_all_day and "date" in c_start:
-                if c_start["date"] == event.start_date:
-                    is_dup = True
+                is_dup = c_start["date"] == event.start_date
             elif not event.is_all_day and "dateTime" in c_start:
                 c_s_dt = datetime.fromisoformat(
                     c_start["dateTime"].replace("Z", "+00:00")
                 ).astimezone(tz)
-                if c_s_dt == start_dt:
-                    is_dup = True
-
+                is_dup = c_s_dt == start_dt
             return best_candidate, is_dup
 
         return None, False
 
     def reschedule_event(self, event_id: str, event: ParsedEvent) -> str:
-        """Update existing event start/end times (and optional fields) and return HTML link."""
-        calendar_id = Config.GOOGLE_CALENDAR_ID
-        timezone_str = Config.TIMEZONE
-
-        body = {
-            "summary": event.summary,
-        }
+        """Update existing event times (and optional fields). Returns HTML link."""
+        tz = get_timezone(Config.TIMEZONE)
+        body: dict = {"summary": event.summary}
         if event.description is not None:
             body["description"] = event.description
         if event.location is not None:
@@ -207,14 +186,10 @@ class CalendarService:
 
         if event.is_all_day:
             body["start"] = {"date": event.start_date}
-            end_date = event.end_date or event.start_date
-            body["end"] = {"date": end_date}
+            body["end"] = {"date": event.end_date or event.start_date}
         else:
-            tz = get_timezone(timezone_str)
             try:
-                start_dt = datetime.fromisoformat(event.start_datetime).replace(
-                    tzinfo=tz
-                )
+                start_dt = datetime.fromisoformat(event.start_datetime).replace(tzinfo=tz)
                 end_dt = datetime.fromisoformat(event.end_datetime).replace(tzinfo=tz)
             except ValueError as e:
                 logger.error(
@@ -225,20 +200,16 @@ class CalendarService:
             body["start"] = {"dateTime": start_dt.isoformat()}
             body["end"] = {"dateTime": end_dt.isoformat()}
 
-        updated_event = (
+        updated = (
             self.service.events()
-            .patch(calendarId=calendar_id, eventId=event_id, body=body)
+            .patch(calendarId=Config.GOOGLE_CALENDAR_ID, eventId=event_id, body=body)
             .execute()
         )
+        return updated.get("htmlLink", "")
 
-        return updated_event.get("htmlLink", "")
-
-    def check_collisions(
-        self, event: ParsedEvent, exclude_event_id: str = None
-    ) -> list:
-        """Check for events overlapping with the new event's time range."""
-        timezone_str = Config.TIMEZONE
-        tz = get_timezone(timezone_str)
+    def check_collisions(self, event: ParsedEvent, exclude_event_id: str = None) -> list:
+        """Return events that overlap with the given event's time range."""
+        tz = get_timezone(Config.TIMEZONE)
 
         if event.is_all_day:
             start_dt = datetime.combine(
@@ -247,26 +218,23 @@ class CalendarService:
             ).replace(tzinfo=tz)
             end_date_str = event.end_date or event.start_date
             if end_date_str == event.start_date and not event.end_date:
-                end_date = datetime.strptime(
-                    event.start_date, "%Y-%m-%d"
-                ).date() + timedelta(days=1)
+                end_date = (
+                    datetime.strptime(event.start_date, "%Y-%m-%d").date()
+                    + timedelta(days=1)
+                )
             else:
                 end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
             end_dt = datetime.combine(end_date, datetime.min.time()).replace(tzinfo=tz)
         else:
             try:
-                start_dt = datetime.fromisoformat(event.start_datetime).replace(
-                    tzinfo=tz
-                )
+                start_dt = datetime.fromisoformat(event.start_datetime).replace(tzinfo=tz)
                 end_dt = datetime.fromisoformat(event.end_datetime).replace(tzinfo=tz)
             except ValueError as e:
                 logger.error(f"Failed to parse datetime: start={event.start_datetime}")
                 raise ValueError(f"Invalid datetime format: {e}")
 
-        existing_events = self.list_events(time_min=start_dt, time_max=end_dt)
         collisions = []
-
-        for ext in existing_events:
+        for ext in self.list_events(time_min=start_dt, time_max=end_dt):
             if exclude_event_id and ext.get("id") == exclude_event_id:
                 continue
 
@@ -274,16 +242,16 @@ class CalendarService:
             ext_end = ext.get("end", {})
 
             if "date" in ext_start:
-                ext_s_date = datetime.strptime(ext_start["date"], "%Y-%m-%d").date()
-                ext_e_date = datetime.strptime(
-                    ext_end.get("date", ext_start["date"]), "%Y-%m-%d"
-                ).date()
-                ext_s_dt = datetime.combine(ext_s_date, datetime.min.time()).replace(
-                    tzinfo=tz
-                )
-                ext_e_dt = datetime.combine(ext_e_date, datetime.min.time()).replace(
-                    tzinfo=tz
-                )
+                ext_s_dt = datetime.combine(
+                    datetime.strptime(ext_start["date"], "%Y-%m-%d").date(),
+                    datetime.min.time(),
+                ).replace(tzinfo=tz)
+                ext_e_dt = datetime.combine(
+                    datetime.strptime(
+                        ext_end.get("date", ext_start["date"]), "%Y-%m-%d"
+                    ).date(),
+                    datetime.min.time(),
+                ).replace(tzinfo=tz)
             else:
                 ext_s_dt = datetime.fromisoformat(
                     ext_start["dateTime"].replace("Z", "+00:00")
@@ -292,7 +260,6 @@ class CalendarService:
                     ext_end["dateTime"].replace("Z", "+00:00")
                 )
 
-            # Verify overlap
             if start_dt < ext_e_dt and ext_s_dt < end_dt:
                 collisions.append(ext)
 
@@ -305,16 +272,13 @@ class CalendarService:
         search_query: str = None,
         max_results: int = 10,
     ) -> list:
-        """List events from Google Calendar based on parameters."""
-        calendar_id = Config.GOOGLE_CALENDAR_ID
-
+        """List events from Google Calendar."""
         params = {
-            "calendarId": calendar_id,
+            "calendarId": Config.GOOGLE_CALENDAR_ID,
             "singleEvents": True,
             "orderBy": "startTime",
             "maxResults": max_results,
         }
-
         if time_min:
             params["timeMin"] = time_min.isoformat()
         if time_max:
@@ -325,40 +289,41 @@ class CalendarService:
         logger.info(
             f"Listing events: timeMin={time_min}, timeMax={time_max}, query={search_query}"
         )
-        events_result = self.service.events().list(**params).execute()
-        return events_result.get("items", [])
+        result = self.service.events().list(**params).execute()
+        return result.get("items", [])
 
     def delete_event(self, event_id: str) -> None:
-        """Delete an event by ID from Google Calendar."""
-        calendar_id = Config.GOOGLE_CALENDAR_ID
+        """Delete an event by ID."""
         logger.info(f"Deleting event: {event_id}")
-        self.service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+        self.service.events().delete(
+            calendarId=Config.GOOGLE_CALENDAR_ID, eventId=event_id
+        ).execute()
 
     def get_event(self, event_id: str) -> dict:
-        """Get details of an event by ID."""
-        calendar_id = Config.GOOGLE_CALENDAR_ID
+        """Get event details by ID."""
         return (
             self.service.events()
-            .get(calendarId=calendar_id, eventId=event_id)
+            .get(calendarId=Config.GOOGLE_CALENDAR_ID, eventId=event_id)
             .execute()
         )
 
     def patch_event(self, event_id: str, body: dict) -> dict:
-        """Patch fields of an event by ID."""
-        calendar_id = Config.GOOGLE_CALENDAR_ID
+        """Patch specific fields of an event."""
         return (
             self.service.events()
-            .patch(calendarId=calendar_id, eventId=event_id, body=body)
+            .patch(
+                calendarId=Config.GOOGLE_CALENDAR_ID, eventId=event_id, body=body
+            )
             .execute()
         )
 
     def get_connection_status(self) -> dict:
-        """Get details of the currently authorized user/calendar."""
-        calendar_id = Config.GOOGLE_CALENDAR_ID
-        res = {}
+        """Return details about the currently authorized user/calendar."""
+        res: dict = {}
+
         try:
-            about_res = self.service.about().get(fields="user").execute()
-            user_info = about_res.get("user", {})
+            about = self.service.about().get(fields="user").execute()
+            user_info = about.get("user", {})
             res["user_email"] = user_info.get("emailAddress", "Unknown")
             res["user_name"] = user_info.get("displayName", "Unknown")
         except HttpError as e:
@@ -373,23 +338,24 @@ class CalendarService:
             res["user_name"] = "Unknown"
 
         try:
-            cal_res = self.service.calendars().get(calendarId=calendar_id).execute()
-            res["calendar_summary"] = cal_res.get("summary", "Unknown")
-            res["calendar_id"] = cal_res.get("id", calendar_id)
-            res["calendar_timezone"] = cal_res.get("timeZone", "Unknown")
+            cal = (
+                self.service.calendars()
+                .get(calendarId=Config.GOOGLE_CALENDAR_ID)
+                .execute()
+            )
+            res["calendar_summary"] = cal.get("summary", "Unknown")
+            res["calendar_id"] = cal.get("id", Config.GOOGLE_CALENDAR_ID)
+            res["calendar_timezone"] = cal.get("timeZone", "Unknown")
         except HttpError as e:
             if e.resp.status == 403:
                 res["calendar_summary"] = "Run /auth again (New Scopes Needed)"
-                res["calendar_id"] = calendar_id
-                res["calendar_timezone"] = "Unknown"
             else:
                 res["calendar_summary"] = f"Error: {e.resp.status}"
-                res["calendar_id"] = calendar_id
-                res["calendar_timezone"] = "Unknown"
-        except Exception as e:
-            res["calendar_summary"] = "Error fetching details"
-            res["calendar_id"] = calendar_id
+            res["calendar_id"] = Config.GOOGLE_CALENDAR_ID
             res["calendar_timezone"] = "Unknown"
-            res["error"] = str(e)
+        except Exception:
+            res["calendar_summary"] = "Error fetching details"
+            res["calendar_id"] = Config.GOOGLE_CALENDAR_ID
+            res["calendar_timezone"] = "Unknown"
 
         return res

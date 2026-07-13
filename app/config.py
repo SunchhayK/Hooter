@@ -10,12 +10,12 @@ class Config:
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
     # Whitelisted Telegram User IDs
-    ALLOWED_USER_IDS = []
-    allowed_ids_str = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
-    if allowed_ids_str:
+    ALLOWED_USER_IDS: list[int] = []
+    _allowed_ids_str = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
+    if _allowed_ids_str:
         try:
             ALLOWED_USER_IDS = [
-                int(x.strip()) for x in allowed_ids_str.split(",") if x.strip()
+                int(x.strip()) for x in _allowed_ids_str.split(",") if x.strip()
             ]
         except ValueError:
             raise ValueError(
@@ -38,8 +38,8 @@ class Config:
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     @classmethod
-    def validate(cls):
-        """Validate config on startup."""
+    def validate(cls) -> None:
+        """Validate required config on startup. Raises ValueError on misconfiguration."""
         if not cls.TELEGRAM_BOT_TOKEN:
             raise ValueError("TELEGRAM_BOT_TOKEN is required in .env")
         if not cls.ALLOWED_USER_IDS:
@@ -61,12 +61,3 @@ class Config:
             raise ValueError(
                 f"Unknown ACTIVE_AI_PROVIDER: {cls.ACTIVE_AI_PROVIDER}. Use 'gemini' or 'openai'"
             )
-
-
-if __name__ == "__main__":
-    # Self-test
-    try:
-        Config.validate()
-        print("Config validated successfully (or skipped due to missing .env).")
-    except ValueError as e:
-        print(f"Validation failed as expected without .env: {e}")
