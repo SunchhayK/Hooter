@@ -26,6 +26,7 @@ class Config:
     GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
     TIMEZONE = os.getenv("TIMEZONE", "UTC")
     GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:6767")
+    DAILY_REMINDER_HOUR = int(os.getenv("DAILY_REMINDER_HOUR", "8"))
 
     # AI Config
     ACTIVE_AI_PROVIDER = os.getenv("ACTIVE_AI_PROVIDER", "gemini").lower()

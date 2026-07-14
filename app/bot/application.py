@@ -44,6 +44,10 @@ async def post_init(application: Application) -> None:
     await application.bot.set_my_commands(commands)
     logger.info("Bot commands registered.")
 
+    from app.bot.scheduler import start_scheduler
+
+    asyncio.create_task(start_scheduler(application))
+
 
 def build_application() -> Application:
     """Build and return the fully configured Telegram Application."""
@@ -67,7 +71,9 @@ def build_application() -> Application:
         CallbackQueryHandler(handle_reschedule_callback, pattern="^.*_reschedule_.*$")
     )
     app.add_handler(
-        MessageHandler((filters.TEXT | filters.CAPTION) & ~filters.COMMAND, handle_message)
+        MessageHandler(
+            (filters.TEXT | filters.CAPTION) & ~filters.COMMAND, handle_message
+        )
     )
 
     return app
