@@ -20,4 +20,4 @@ jobs:
           script: |
             cd /home/ruined/Home/projects/Hooter
             git pull origin main
-            docker-compose up -d --build
+            docker compose up -d --build
