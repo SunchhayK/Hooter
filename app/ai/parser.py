@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # Schema models
 # ---------------------------------------------------------------------------
 
+
 class ParsedEvent(BaseModel):
     summary: str = Field(description="Brief title of the event or task")
     is_all_day: bool = Field(
@@ -52,12 +53,25 @@ class ParsedEvent(BaseModel):
     )
 
 
+class ParsedTask(BaseModel):
+    title: str = Field(description="Title of the task")
+    notes: Optional[str] = Field(None, description="Description or notes for the task")
+    due_date: Optional[str] = Field(
+        None, description="ISO 8601 datetime for when the task is due, if specified."
+    )
+
+
 class AIResponse(BaseModel):
     intent: str = Field(
-        description="Must be either 'create' (schedule new events) or 'query' (search/list existing)."
+        description="Must be 'create' (schedule new events/tasks), 'query' (search events), or 'complete_task' (mark task done)."
     )
     events: Optional[List[ParsedEvent]] = Field(
-        default=None, description="Events to create. Use when intent is 'create'."
+        default=None,
+        description="Events to create. Use when intent is 'create' and user asks for calendar events.",
+    )
+    tasks: Optional[List[ParsedTask]] = Field(
+        default=None,
+        description="Tasks to create or complete. Use for to-dos, reminders, or tasks without a strict time block.",
     )
     query_time_min: Optional[str] = Field(
         default=None,
@@ -77,6 +91,7 @@ class AIResponse(BaseModel):
 # Abstract base
 # ---------------------------------------------------------------------------
 
+
 class AIParser(ABC):
     @abstractmethod
     def parse_message(
@@ -86,18 +101,19 @@ class AIParser(ABC):
 
     def _get_system_instruction(self, reference_time_str: str, timezone: str) -> str:
         return (
-            "You are a calendar bot assistant. Determine the user's intent: "
-            "'create' (to add new events) or 'query' (to search/list schedule).\n"
+            "You are a calendar and task bot assistant. Determine the user's intent: "
+            "'create' (to add new events or tasks), 'query' (to search/list schedule), or 'complete_task'.\n"
             f"Current local time: {reference_time_str}\n"
             f"User Timezone: {timezone}\n\n"
             "Rules for intent='create':\n"
-            "1. Extract calendar event details into the 'events' list.\n"
-            "2. Compute relative dates/times (e.g., 'tomorrow', 'next Wed at 3pm') using the Current local time.\n"
-            "3. Extract MULTIPLE events if the message contains more than one schedule or class update.\n\n"
+            "1. Extract calendar event details into the 'events' list for blocked time.\n"
+            "2. Extract to-dos and reminders into the 'tasks' list.\n"
+            "3. Compute relative dates/times using the Current local time.\n\n"
             "Rules for intent='query':\n"
             "1. Set 'query_time_min' and/or 'query_time_max' to represent the requested range.\n"
-            "2. Set 'query_search' if the user asks about a specific keyword or event topic.\n"
-            "3. Leave 'events' empty."
+            "2. Set 'query_search' if looking for a specific topic.\n\n"
+            "Rules for intent='complete_task':\n"
+            "1. Extract the task(s) to complete into the 'tasks' list with the 'title' matching the task to be marked done."
         )
 
 
@@ -105,9 +121,11 @@ class AIParser(ABC):
 # Provider implementations
 # ---------------------------------------------------------------------------
 
+
 class GeminiParser(AIParser):
     def __init__(self, api_key: str, model_name: str) -> None:
         from google import genai
+
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
 
@@ -134,6 +152,7 @@ class GeminiParser(AIParser):
 class OpenAIParser(AIParser):
     def __init__(self, api_key: str, model_name: str) -> None:
         from openai import OpenAI
+
         self.client = OpenAI(api_key=api_key)
         self.model_name = model_name
 
@@ -156,6 +175,7 @@ class OpenAIParser(AIParser):
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
 
 class AIParserFactory:
     @staticmethod

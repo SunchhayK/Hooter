@@ -22,6 +22,8 @@ async def start_scheduler(application: Application) -> None:
     last_daily_sent: dict[int, str] = {}
     # sent_reminders: set[tuple[int, str, str]] -> tracks (user_id, event_id, start_time_iso)
     sent_reminders: set[tuple[int, str, str]] = set()
+    # last_task_reminder: dict[int, datetime] -> tracks last time 4h tasks reminder was sent
+    last_task_reminder: dict[int, datetime] = {}
 
     while True:
         try:
@@ -133,6 +135,42 @@ async def start_scheduler(application: Application) -> None:
                             logger.info(
                                 f"Sent 1-hour reminder for event {event_id} to user {user_id}"
                             )
+
+                    # 3. 4-Hour Tasks Reminder
+                    last_task = last_task_reminder.get(user_id)
+                    if not last_task or now - last_task >= timedelta(hours=4):
+                        tasks = calendar.list_tasks(show_completed=False)
+                        if tasks:
+                            from telegram import (
+                                InlineKeyboardMarkup,
+                                InlineKeyboardButton,
+                            )
+
+                            task_lines = []
+                            keyboard = []
+                            for task in tasks:
+                                title = task.get("title", "Untitled")
+                                task_id = task.get("id")
+                                task_lines.append(f"• {title}")
+                                keyboard.append(
+                                    [
+                                        InlineKeyboardButton(
+                                            f"✅ Complete: {title[:20]}",
+                                            callback_data=f"completetask_{task_id}",
+                                        )
+                                    ]
+                                )
+
+                            text = "📝 *Unfinished Tasks Reminder*\n\n" + "\n".join(
+                                task_lines
+                            )
+                            await application.bot.send_message(
+                                chat_id=user_id,
+                                text=text,
+                                parse_mode="Markdown",
+                                reply_markup=InlineKeyboardMarkup(keyboard),
+                            )
+                        last_task_reminder[user_id] = now
 
                 except Exception as e:
                     logger.error(

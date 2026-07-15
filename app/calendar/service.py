@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/tasks",
 ]
 
 
@@ -48,7 +49,7 @@ def _write_token(path: str, json_str: str) -> None:
 
 
 class CalendarService:
-    """Wraps the Google Calendar API for a specific user's credentials."""
+    """Wraps the Google Calendar and Tasks APIs for a specific user's credentials."""
 
     def __init__(self, user_id: int = None, token_path: str = None) -> None:
         if token_path is not None:
@@ -63,6 +64,43 @@ class CalendarService:
 
         self.creds = self._load_credentials()
         self.service = build("calendar", "v3", credentials=self.creds)
+        self.tasks_service = build("tasks", "v1", credentials=self.creds)
+
+    def list_tasks(
+        self, tasklist: str = "@default", show_completed: bool = False
+    ) -> list:
+        """List tasks from Google Tasks."""
+        res = (
+            self.tasks_service.tasks()
+            .list(tasklist=tasklist, showCompleted=show_completed)
+            .execute()
+        )
+        return res.get("items", [])
+
+    def create_task(
+        self,
+        title: str,
+        notes: str = None,
+        due_date: str = None,
+        tasklist: str = "@default",
+    ) -> dict:
+        """Create a new Google Task."""
+        body = {"title": title}
+        if notes:
+            body["notes"] = notes
+        if due_date:
+            body["due"] = due_date
+        return self.tasks_service.tasks().insert(tasklist=tasklist, body=body).execute()
+
+    def complete_task(self, task_id: str, tasklist: str = "@default") -> dict:
+        """Mark a task as completed."""
+        task = self.tasks_service.tasks().get(tasklist=tasklist, task=task_id).execute()
+        task["status"] = "completed"
+        return (
+            self.tasks_service.tasks()
+            .update(tasklist=tasklist, task=task_id, body=task)
+            .execute()
+        )
 
     def _load_credentials(self) -> Credentials:
         creds = None
@@ -72,12 +110,23 @@ class CalendarService:
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 logger.info("Google OAuth token expired. Refreshing...")
-                creds.refresh(Request())
-                _write_token(self.token_path, creds.to_json())
+                try:
+                    creds.refresh(Request())
+                    _write_token(self.token_path, creds.to_json())
+                except Exception as e:
+                    logger.error(f"Failed to refresh token: {e}")
+                    # Delete the invalid token so it doesn't keep failing
+                    try:
+                        os.remove(self.token_path)
+                    except OSError:
+                        pass
+                    raise FileNotFoundError(
+                        "Credentials invalid or expired. Please run /auth in Telegram to re-authorize."
+                    )
             else:
                 raise FileNotFoundError(
                     f"Valid credentials not found at {self.token_path}. "
-                    "Please run /auth in Telegram or scripts/setup_oauth.py to authorize."
+                    "Please run /auth in Telegram to authorize."
                 )
         return creds
 
@@ -95,7 +144,9 @@ class CalendarService:
             body["end"] = {"date": event.end_date or event.start_date}
         else:
             try:
-                start_dt = datetime.fromisoformat(event.start_datetime).replace(tzinfo=tz)
+                start_dt = datetime.fromisoformat(event.start_datetime).replace(
+                    tzinfo=tz
+                )
                 end_dt = datetime.fromisoformat(event.end_datetime).replace(tzinfo=tz)
             except ValueError as e:
                 logger.error(
@@ -125,7 +176,9 @@ class CalendarService:
             ).replace(tzinfo=tz)
         else:
             try:
-                start_dt = datetime.fromisoformat(event.start_datetime).replace(tzinfo=tz)
+                start_dt = datetime.fromisoformat(event.start_datetime).replace(
+                    tzinfo=tz
+                )
             except ValueError as e:
                 logger.error(f"Failed to parse datetime: start={event.start_datetime}")
                 raise ValueError(f"Invalid datetime format: {e}")
@@ -189,7 +242,9 @@ class CalendarService:
             body["end"] = {"date": event.end_date or event.start_date}
         else:
             try:
-                start_dt = datetime.fromisoformat(event.start_datetime).replace(tzinfo=tz)
+                start_dt = datetime.fromisoformat(event.start_datetime).replace(
+                    tzinfo=tz
+                )
                 end_dt = datetime.fromisoformat(event.end_datetime).replace(tzinfo=tz)
             except ValueError as e:
                 logger.error(
@@ -207,7 +262,9 @@ class CalendarService:
         )
         return updated.get("htmlLink", "")
 
-    def check_collisions(self, event: ParsedEvent, exclude_event_id: str = None) -> list:
+    def check_collisions(
+        self, event: ParsedEvent, exclude_event_id: str = None
+    ) -> list:
         """Return events that overlap with the given event's time range."""
         tz = get_timezone(Config.TIMEZONE)
 
@@ -218,16 +275,17 @@ class CalendarService:
             ).replace(tzinfo=tz)
             end_date_str = event.end_date or event.start_date
             if end_date_str == event.start_date and not event.end_date:
-                end_date = (
-                    datetime.strptime(event.start_date, "%Y-%m-%d").date()
-                    + timedelta(days=1)
-                )
+                end_date = datetime.strptime(
+                    event.start_date, "%Y-%m-%d"
+                ).date() + timedelta(days=1)
             else:
                 end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
             end_dt = datetime.combine(end_date, datetime.min.time()).replace(tzinfo=tz)
         else:
             try:
-                start_dt = datetime.fromisoformat(event.start_datetime).replace(tzinfo=tz)
+                start_dt = datetime.fromisoformat(event.start_datetime).replace(
+                    tzinfo=tz
+                )
                 end_dt = datetime.fromisoformat(event.end_datetime).replace(tzinfo=tz)
             except ValueError as e:
                 logger.error(f"Failed to parse datetime: start={event.start_datetime}")
@@ -311,9 +369,7 @@ class CalendarService:
         """Patch specific fields of an event."""
         return (
             self.service.events()
-            .patch(
-                calendarId=Config.GOOGLE_CALENDAR_ID, eventId=event_id, body=body
-            )
+            .patch(calendarId=Config.GOOGLE_CALENDAR_ID, eventId=event_id, body=body)
             .execute()
         )
 

@@ -95,18 +95,59 @@ async def process_and_save(
             )
             return
 
+        # ── Complete Task intent ──────────────────────────────────────
+        if ai_res.intent == "complete_task" and ai_res.tasks:
+            calendar = CalendarService(user_id=user_id)
+            existing_tasks = calendar.list_tasks(show_completed=False)
+            completed_reports = []
+
+            for task_req in ai_res.tasks:
+                target_title = task_req.title.lower()
+                found = False
+                for existing in existing_tasks:
+                    if target_title in existing.get("title", "").lower():
+                        calendar.complete_task(existing["id"])
+                        completed_reports.append(
+                            f"✅ Marked as done: *{existing.get('title')}*"
+                        )
+                        found = True
+                        break
+                if not found:
+                    completed_reports.append(
+                        f"❌ Could not find active task matching: *{task_req.title}*"
+                    )
+
+            await status_message.edit_text(
+                "\n".join(completed_reports), parse_mode="Markdown"
+            )
+            return
+
         # ── Create intent ─────────────────────────────────────────────
-        events = ai_res.events
-        if not events:
-            await status_message.edit_text("❌ No events found in this message.")
+        events = ai_res.events or []
+        tasks = ai_res.tasks or []
+
+        if not events and not tasks:
+            await status_message.edit_text(
+                "❌ No events or tasks found in this message."
+            )
             return
 
         await status_message.edit_text(
-            f"AI parsed {len(events)} event(s). Adding to Google Calendar..."
+            f"AI parsed {len(events)} event(s) and {len(tasks)} task(s). Processing..."
         )
 
         calendar = CalendarService(user_id=user_id)
         success_reports = []
+
+        # Process Tasks
+        for task in tasks:
+            created = calendar.create_task(
+                title=task.title, notes=task.notes, due_date=task.due_date
+            )
+            report = f"✅ *Task created*: {task.title}"
+            if task.due_date:
+                report += f" (Due: {task.due_date})"
+            success_reports.append(report)
 
         for idx, event in enumerate(events, start=1):
             candidate, is_dup = calendar.find_reschedule_candidate(event)

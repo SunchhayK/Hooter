@@ -7,7 +7,6 @@ from telegram.ext import ContextTypes
 
 from app.ai.parser import ParsedEvent
 from app.bot.event_processor import process_and_save
-from app.bot.formatters import format_event_time_range
 from app.calendar.service import CalendarService, get_timezone
 from app.config import Config
 
@@ -26,12 +25,16 @@ async def handle_retry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     original_message = query.message.reply_to_message
     if not original_message:
-        await query.message.reply_text("❌ Error: Original message not found. Cannot retry.")
+        await query.message.reply_text(
+            "❌ Error: Original message not found. Cannot retry."
+        )
         return
 
     text = original_message.text or original_message.caption
     if not text:
-        await query.message.reply_text("❌ Error: Original message has no text. Cannot retry.")
+        await query.message.reply_text(
+            "❌ Error: Original message has no text. Cannot retry."
+        )
         return
 
     await query.message.edit_text("Parsing message with AI (Retry)...")
@@ -136,7 +139,9 @@ async def handle_reschedule_callback(
                         locations.append(other["location"])
                     calendar.delete_event(other_id)
                 except Exception as ex:
-                    logger.warning(f"Failed to fetch/delete colliding event {other_id}: {ex}")
+                    logger.warning(
+                        f"Failed to fetch/delete colliding event {other_id}: {ex}"
+                    )
 
             summaries.append(event.summary)
             if event.description:
@@ -146,7 +151,8 @@ async def handle_reschedule_callback(
 
             body: dict = {
                 "summary": " & ".join(filter(None, summaries)),
-                "description": "\n---\nMerged event details:\n" + "\n---\n".join(filter(None, descriptions)),
+                "description": "\n---\nMerged event details:\n"
+                + "\n---\n".join(filter(None, descriptions)),
             }
             merged_loc = ", ".join(set(filter(None, locations)))
             if merged_loc:
@@ -205,3 +211,39 @@ async def handle_reschedule_callback(
     except Exception:
         logger.exception("Failed to process reschedule callback")
         await query.message.edit_text("❌ Error processing action. Please try again.")
+
+
+async def handle_completetask_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle completetask callback from reminder buttons."""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    if user_id not in Config.ALLOWED_USER_IDS:
+        logger.warning(f"Unauthorized task complete attempt by User ID: {user_id}")
+        return
+
+    data = query.data
+    if not data.startswith("completetask_"):
+        return
+
+    task_id = data.replace("completetask_", "")
+    calendar = CalendarService(user_id=user_id)
+
+    try:
+        task = calendar.complete_task(task_id)
+        title = task.get("title", "Task")
+
+        # We can update the message to reflect it's done, or just send a new one
+        await query.message.reply_text(
+            f"✅ Marked as done: *{title}*", parse_mode="Markdown"
+        )
+
+        # Optional: Edit the original message to remove the button?
+        # That's a bit complex if there are multiple tasks in one message.
+        # So we just acknowledge it.
+    except Exception:
+        logger.exception(f"Failed to complete task {task_id}")
+        await query.message.reply_text("❌ Error completing task.")

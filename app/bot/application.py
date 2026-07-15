@@ -12,7 +12,11 @@ from telegram.ext import (
     filters,
 )
 
-from app.bot.handlers.callbacks import handle_reschedule_callback, handle_retry
+from app.bot.handlers.callbacks import (
+    handle_reschedule_callback,
+    handle_retry,
+    handle_completetask_callback,
+)
 from app.bot.handlers.commands import (
     command_auth,
     command_schedule,
@@ -69,6 +73,9 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(handle_retry, pattern="^retry$"))
     app.add_handler(
         CallbackQueryHandler(handle_reschedule_callback, pattern="^.*_reschedule_.*$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(handle_completetask_callback, pattern="^completetask_.*$")
     )
     app.add_handler(
         MessageHandler(

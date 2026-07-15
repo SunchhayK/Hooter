@@ -179,9 +179,21 @@ def test_reschedule_duplicate_and_collision():
             print("✓ Reschedule, duplicate, and collision detection logic works.")
 
 
+def test_task_parsing_schema():
+    """Verify ParsedTask validates inputs correctly."""
+    from app.ai.parser import ParsedTask
+
+    task = ParsedTask(
+        title="Buy milk", notes="2% milk", due_date="2026-07-15T10:00:00Z"
+    )
+    assert task.title == "Buy milk"
+    print("✓ Task schema validation works.")
+
+
 if __name__ == "__main__":
     print("Running self-checks...")
     test_pydantic_schema()
+    test_task_parsing_schema()
     test_openai_parser_mock()
     test_gemini_parser_mock()
     test_query_intent_mock()
