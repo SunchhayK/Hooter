@@ -18,6 +18,6 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            cd /path/to/Hooter
+            cd /home/ruined/Home/projects/Hooter
             git pull origin main
             docker-compose up -d --build
