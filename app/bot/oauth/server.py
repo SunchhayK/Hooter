@@ -31,14 +31,54 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args) -> None:  # noqa: A002
         logger.info(f"HTTP Server - {format % args}")
 
+    # Static files served from the working directory.
+    # Explicit whitelist prevents path traversal.
+    _STATIC: dict[str, str] = {
+        "/": "index.html",
+        "/index.html": "index.html",
+        "/privacy.html": "privacy.html",
+        "/terms.html": "terms.html",
+        "/sitemap.xml": "sitemap.xml",
+    }
+    _MIME: dict[str, str] = {
+        ".html": "text/html; charset=utf-8",
+        ".xml": "application/xml; charset=utf-8",
+    }
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
 
-        # Only handle the OAuth callback path; ignore everything else
-        if parsed.path != "/oauth/callback":
-            self.send_response(404)
-            self.end_headers()
+        if parsed.path == "/oauth/callback":
+            self._handle_oauth(parsed)
             return
+
+        # Google site-verification file (dynamic name, fixed prefix)
+        if parsed.path.startswith("/google") and parsed.path.endswith(".html"):
+            filename = parsed.path.lstrip("/")
+            if os.path.isfile(filename) and "/" not in filename:
+                self._serve_file(filename, "text/html; charset=utf-8")
+                return
+
+        filename = self._STATIC.get(parsed.path)
+        if filename and os.path.isfile(filename):
+            ext = os.path.splitext(filename)[1]
+            mime = self._MIME.get(ext, "text/plain")
+            self._serve_file(filename, mime)
+            return
+
+        self.send_response(404)
+        self.end_headers()
+
+    def _serve_file(self, path: str, content_type: str) -> None:
+        with open(path, "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_oauth(self, parsed) -> None:
 
         params = urllib.parse.parse_qs(parsed.query)
 
