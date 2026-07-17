@@ -7,38 +7,5 @@ services:
       - .env
     volumes:
       - ./tokens:/app/tokens
-    expose:
-      - "6767"
-
-  nginx:
-    image: nginx:alpine
-    container_name: tg-calendar-nginx
-    restart: always
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - certbot-www:/var/www/certbot:ro
-      - certbot-certs:/etc/letsencrypt:ro
-    depends_on:
-      - bot
-
-  certbot:
-    image: certbot/certbot
-    container_name: tg-calendar-certbot
-    volumes:
-      - certbot-www:/var/www/certbot
-      - certbot-certs:/etc/letsencrypt
-    # Run once to obtain cert; remove --dry-run when ready
-    command: >
-      certonly --webroot
-      --webroot-path=/var/www/certbot
-      --email ssunchhay.khoun@gamil.com
-      --agree-tos
-      --no-eff-email
-      -d hooter.labyrinth.buzz.com
-
-volumes:
-  certbot-www:
-  certbot-certs:
+      - "6767:6767"
