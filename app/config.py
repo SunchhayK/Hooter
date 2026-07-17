@@ -25,7 +25,7 @@ class Config:
     # Google Calendar
     GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
     TIMEZONE = os.getenv("TIMEZONE", "UTC")
-    GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:6767")
+    GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "https://hooter.labyrinth.buzz.com/oauth/callback")
     DAILY_REMINDER_HOUR = int(os.getenv("DAILY_REMINDER_HOUR", "8"))
 
     # AI Config

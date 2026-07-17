@@ -1,61 +1,84 @@
-# Deploy Bot to Remote Server
+# Deploy Bot to Home Server
 
 ## Prerequisites
 
-- Server (Ubuntu/Debian)
-- Docker & Docker Compose installed
+- Ubuntu/Debian server with Docker & Docker Compose installed
+- Domain pointing to your server's public IP (`hooter.labyrinth.buzz.com`)
+- Port **80** and **443** open on your router/firewall (forwarded to this machine)
 - Git installed
 
-## Steps
+## First-Time Setup
 
-1. **SSH to server:**
+### 1. Clone repo
 
-   ```bash
-   ssh user@server_ip
-   ```
+```bash
+git clone git@github.com:SunchhayK/Hooter.git
+cd Hooter
+```
 
-2. **Clone repo:**
+### 2. Configure environment
 
-   ```bash
-   git clone git@github.com:SunchhayK/Hooter.git
-   cd Hooter
-   ```
+```bash
+cp .env.example .env
+nano .env
+# Fill in: TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USER_IDS,
+#          GEMINI_API_KEY, GOOGLE_REDIRECT_URI (already set to domain)
+```
 
-3. **Setup environment:**
+### 3. Add Google credentials
 
-   ```bash
-   cp .env.example .env
-   nano .env
-   # Set environment variables
-   ```
+```bash
+nano credentials.json
+# Paste your Web Application credentials.json content
+```
 
-4. **Add Google credentials:**
+### 4. Obtain TLS certificate (first time only)
 
-   ```bash
-   nano credentials.json
-   # Paste credentials.json content
-   ```
+```bash
+# Update certbot email in docker-compose.yml first, then:
+docker compose run --rm certbot
 
-5. **Start bot:**
+# Nginx needs to be up for the ACME challenge:
+docker compose up -d nginx
+docker compose run --rm certbot
+docker compose down
+```
 
-   ```bash
-   docker-compose up -d --build
-   ```
+### 5. Start all services
 
-6. **Check logs:**
-   ```bash
-   docker-compose logs -f bot
-   ```
+```bash
+docker compose up -d --build
+docker compose logs -f bot
+```
+
+### 6. Authorize Google Calendar
+
+Send `/auth` in Telegram. Click the link — Google redirects to
+`https://hooter.labyrinth.buzz.com/oauth/callback` automatically.
+Bot will notify you in Telegram on success. ✅
+
+---
+
+## Renew TLS Certificate
+
+Certbot certs expire every 90 days. Renew with:
+
+```bash
+docker compose run --rm certbot renew
+docker compose exec nginx nginx -s reload
+```
+
+Add to crontab for automatic renewal:
+
+```cron
+0 3 * * * cd /path/to/Hooter && docker compose run --rm certbot renew && docker compose exec nginx nginx -s reload
+```
+
+---
 
 ## Update Bot
 
-1. **Pull changes:**
-
-   ```bash
-   git pull origin main
-   ```
-
-2. **Restart container:**
-   ```bash
-   docker-compose up -d --build
-   ```
+```bash
+git pull origin main
+docker compose up -d --build bot
+```

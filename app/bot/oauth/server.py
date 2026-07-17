@@ -32,8 +32,15 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
         logger.info(f"HTTP Server - {format % args}")
 
     def do_GET(self) -> None:
-        query = urllib.parse.urlparse(self.path).query
-        params = urllib.parse.parse_qs(query)
+        parsed = urllib.parse.urlparse(self.path)
+
+        # Only handle the OAuth callback path; ignore everything else
+        if parsed.path != "/oauth/callback":
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        params = urllib.parse.parse_qs(parsed.query)
 
         state = (params.get("state") or [None])[0]
         code = (params.get("code") or [None])[0]
@@ -50,7 +57,8 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
         user_id, flow, chat_id, _inserted_at = val
 
         try:
-            auth_response = f"{Config.GOOGLE_REDIRECT_URI.rstrip('/')}{self.path}"
+            # Build the full authorization response URL Google sent us
+            auth_response = f"{Config.GOOGLE_REDIRECT_URI.rstrip('/')}?{parsed.query}"
             flow.fetch_token(authorization_response=auth_response)
             creds = flow.credentials
 

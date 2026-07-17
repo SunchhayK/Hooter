@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from telegram import Update
 from telegram.ext import ContextTypes
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 
 from app.bot.event_processor import query_and_display
 from app.bot.oauth.manager import OAuthManager
@@ -101,7 +101,7 @@ async def command_auth(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     try:
-        flow = InstalledAppFlow.from_client_secrets_file(
+        flow = Flow.from_client_secrets_file(
             credentials_file, scopes=SCOPES, redirect_uri=Config.GOOGLE_REDIRECT_URI
         )
         auth_url, state = flow.authorization_url(
@@ -117,10 +117,8 @@ async def command_auth(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "⚠️ *Note*: If you see an 'Access blocked' or 'Unverified app' error, "
             "add your Google account as a *Test User* in Google Cloud Console "
             "(OAuth consent screen).\n\n"
-            "2. After authorizing, Google will redirect to localhost automatically. "
-            "If it succeeds, the bot will notify you here directly!\n\n"
-            "3. If automatic redirection fails, copy the *FULL* redirect URL from "
-            "your browser's address bar and paste it here.",
+            "2. After authorizing, Google will redirect back automatically. "
+            "The bot will notify you here once connected! ✅",
             parse_mode="Markdown",
             disable_web_page_preview=True,
         )
