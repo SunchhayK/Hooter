@@ -5,46 +5,108 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google-site-verification" content="b1fonK1IjqZysccdV8ZDZi2Nw5XMBIMyhJjNSjAc0ws" />
-    <title>Telegram Calendar Bot - Add events with AI</title>
+    <meta name="description"
+        content="Hooter is a personal Telegram bot that uses AI to parse scheduling messages and automatically add events to your Google Calendar.">
+    <title>Hooter – AI-Powered Telegram Calendar Bot</title>
     <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            line-height: 1.6;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 0 20px;
-            color: #333;
-            text-align: center;
+            background: #f5f7fa;
+            color: #1a1a2e;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
         }
 
-        h1 {
+        .card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, .08);
+            max-width: 680px;
+            width: 100%;
+            padding: 48px 40px;
+        }
+
+        .logo {
+            font-size: 2.6rem;
+            font-weight: 700;
             color: #1a73e8;
-            margin-top: 50px;
+            letter-spacing: -1px;
+            margin-bottom: 8px;
         }
 
-        p {
-            font-size: 1.2rem;
-            color: #666;
-            margin-bottom: 30px;
+        .tagline {
+            font-size: 1.05rem;
+            color: #555;
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }
+
+        h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            color: #888;
+            margin-bottom: 14px;
         }
 
         .features {
-            text-align: left;
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 40px;
-            display: inline-block;
+            list-style: none;
+            margin-bottom: 32px;
+        }
+
+        .features li {
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: .97rem;
+            color: #333;
+            display: flex;
+            gap: 10px;
+        }
+
+        .features li:last-child {
+            border-bottom: none;
+        }
+
+        .features li::before {
+            content: "✓";
+            color: #1a73e8;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .scope-notice {
+            background: #f0f6ff;
+            border-left: 3px solid #1a73e8;
+            border-radius: 6px;
+            padding: 14px 16px;
+            font-size: .9rem;
+            color: #333;
+            margin-bottom: 32px;
+            line-height: 1.6;
         }
 
         .footer {
-            margin-top: 50px;
-            border-top: 1px solid #eee;
-            padding-top: 20px;
+            font-size: .85rem;
+            color: #aaa;
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
         }
 
         .footer a {
-            margin: 0 15px;
             color: #1a73e8;
             text-decoration: none;
         }
@@ -56,23 +118,33 @@
 </head>
 
 <body>
-    <h1>Hooter - Telegram Calendar Bot</h1>
-    <p>A smart assistant that parses forwarded scheduling messages using AI and automatically schedules them to your
-        Google Calendar.</p>
+    <div class="card">
+        <div class="logo">Hooter</div>
+        <p class="tagline">
+            A personal Telegram bot that reads your forwarded scheduling messages,
+            extracts event details using AI, and saves them directly to your Google Calendar.
+        </p>
 
-    <div class="features">
-        <h3>Key Features:</h3>
-        <ul>
-            <li>Automatic event parsing from natural language chats</li>
-            <li>Detects start/end times, location, and description</li>
-            <li>Supports timezone-aware scheduling</li>
-            <li>Direct link to view created events in Google Calendar</li>
+        <h2>What Hooter does</h2>
+        <ul class="features">
+            <li>Parses natural-language schedules forwarded in Telegram chats</li>
+            <li>Extracts event title, start/end time, location, and description</li>
+            <li>Creates events in your Google Calendar automatically</li>
+            <li>Supports timezone-aware scheduling and all-day events</li>
+            <li>Notifies you with a direct link to the created event</li>
         </ul>
-    </div>
 
-    <div class="footer">
-        <a href="privacy.html">Privacy Policy</a>
-        <a href="terms.html">Terms of Service</a>
+        <div class="scope-notice">
+            <strong>Google API usage:</strong> Hooter requests access to your Google Calendar
+            solely to create, read, and update events on your behalf. No data is shared with
+            third parties. The app is operated as a private personal tool.
+        </div>
+
+        <div class="footer">
+            <span>© 2025 Hooter</span>
+            <a href="/privacy">Privacy Policy</a>
+            <a href="/terms">Terms of Service</a>
+        </div>
     </div>
 </body>
 

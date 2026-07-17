@@ -36,7 +36,9 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
     _STATIC: dict[str, str] = {
         "/": "index.html",
         "/index.html": "index.html",
+        "/privacy": "privacy.html",
         "/privacy.html": "privacy.html",
+        "/terms": "terms.html",
         "/terms.html": "terms.html",
         "/sitemap.xml": "sitemap.xml",
     }
