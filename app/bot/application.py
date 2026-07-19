@@ -24,6 +24,7 @@ from app.bot.handlers.commands import (
     command_status,
     command_today,
     command_tomorrow,
+    command_tasks,
 )
 from app.bot.handlers.messages import handle_message
 from app.bot.oauth.server import set_telegram_notifier, start_callback_server
@@ -42,6 +43,7 @@ async def post_init(application: Application) -> None:
         BotCommand("tomorrow", "Show tomorrow's schedule"),
         BotCommand("schedule", "Show schedule for next 7 days"),
         BotCommand("list", "Show schedule for next 7 days"),
+        BotCommand("tasks", "Show active tasks list"),
         BotCommand("status", "Check connected Google account/calendar"),
         BotCommand("auth", "Connect Google Calendar account"),
     ]
@@ -70,6 +72,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("tomorrow", command_tomorrow))
     app.add_handler(CommandHandler("schedule", command_schedule))
     app.add_handler(CommandHandler("list", command_schedule))
+    app.add_handler(CommandHandler("tasks", command_tasks))
     app.add_handler(CallbackQueryHandler(handle_retry, pattern="^retry$"))
     app.add_handler(
         CallbackQueryHandler(handle_reschedule_callback, pattern="^.*_reschedule_.*$")
@@ -82,6 +85,7 @@ def build_application() -> Application:
             (filters.TEXT | filters.CAPTION) & ~filters.COMMAND, handle_message
         )
     )
+
 
     return app
 

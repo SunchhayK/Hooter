@@ -1,6 +1,8 @@
 """Formatting utilities for Telegram Markdown output."""
 
 from datetime import datetime, timedelta
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 
 
 def format_event_list(events: list, tz, start_date=None, end_date=None) -> str:
@@ -66,3 +68,41 @@ def format_event_time_range(event_or_parsed, tz) -> str:
         return start["date"]
     dt = datetime.fromisoformat(start["dateTime"].replace("Z", "+00:00")).astimezone(tz)
     return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def build_tasks_keyboard(tasks: list) -> tuple[str, InlineKeyboardMarkup | None]:
+    """Build task list text and inline keyboard for completing tasks."""
+    if not tasks:
+        return "✅ No active tasks found.", None
+
+    lines = ["📝 *Active Tasks:*"]
+    keyboard_buttons = []
+
+    for idx, task in enumerate(tasks, 1):
+        title = task.get("title", "(No Title)")
+        due = task.get("due", "")
+        due_str = ""
+        if due:
+            try:
+                dt = datetime.fromisoformat(due.replace("Z", "+00:00"))
+                due_str = f" (Due: {dt.strftime('%b %d')})"
+            except Exception:
+                due_str = f" (Due: {due[:10]})"
+        lines.append(f"{idx}. {title}{due_str}")
+
+        task_id = task.get("id")
+        cb_data = f"completetask_{task_id}"
+        # Telegram callback data limit is 64 bytes
+        if len(cb_data.encode("utf-8")) <= 64:
+            keyboard_buttons.append(
+                InlineKeyboardButton(f"✅ {idx}", callback_data=cb_data)
+            )
+
+    keyboard = None
+    if keyboard_buttons:
+        # Group buttons in rows of up to 5 buttons
+        rows = [keyboard_buttons[i : i + 5] for i in range(0, len(keyboard_buttons), 5)]
+        keyboard = InlineKeyboardMarkup(rows)
+
+    return "\n".join(lines), keyboard
+

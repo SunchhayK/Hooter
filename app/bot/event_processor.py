@@ -1,8 +1,8 @@
 """Core AI → Calendar pipeline: query display and event creation."""
 
 import logging
-import time
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -13,6 +13,42 @@ from app.calendar.service import CalendarService, get_timezone
 from app.config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def _build_calendar_context(events: list, tasks: list, tz) -> str:
+    """Compact context block injected into the AI prompt.
+
+    Lets the AI resolve vague references ("the meeting", "that workshop")
+    against what's actually on the calendar this week.
+    """
+    lines = ["## Your current calendar (today → end of week)"]
+
+    if events:
+        lines.append("### Upcoming events")
+        for e in events:
+            s = e.get("start", {})
+            if "date" in s:
+                time_str = s["date"]
+            else:
+                dt = datetime.fromisoformat(
+                    s["dateTime"].replace("Z", "+00:00")
+                ).astimezone(tz)
+                time_str = dt.strftime("%Y-%m-%d %H:%M")
+            lines.append(f"  - [{e.get('summary', '(No Title)')}] {time_str}")
+    else:
+        lines.append("### Upcoming events: none")
+
+    pending = [t for t in tasks if t.get("status") != "completed"]
+    if pending:
+        lines.append("### Pending tasks")
+        for t in pending:
+            due = t.get("due", "")
+            due_str = f" (due: {due[:10]})" if due else ""
+            lines.append(f"  - [{t.get('title', '(No Title)')}]{due_str}")
+    else:
+        lines.append("### Pending tasks: none")
+
+    return "\n".join(lines)
 
 
 async def query_and_display(
@@ -55,9 +91,26 @@ async def process_and_save(
         parser = AIParserFactory.get_parser()
         tz = get_timezone(Config.TIMEZONE)
         now = datetime.now(tz)
-        reference_time_str = now.strftime("%Y-%m-%d %H:%M:%S (%A)")
+        reference_time_str = now.strftime("%Y-%m-%d %H:%M (%A)")
 
-        ai_res = parser.parse_message(text, reference_time_str, Config.TIMEZONE)
+        # Fetch upcoming events + tasks to give the AI calendar context so it can
+        # resolve vague references ("the meeting", "that workshop", no date given).
+        # Gracefully degrades to empty context if not yet authenticated.
+        calendar_context = ""
+        try:
+            _cal = CalendarService(user_id=user_id)
+            week_end = now + timedelta(days=(6 - now.weekday()) or 7)  # next Sunday
+            upcoming = _cal.list_events(time_min=now, time_max=week_end, max_results=20)
+            tasks_raw = _cal.list_tasks(show_completed=False)
+            calendar_context = _build_calendar_context(upcoming, tasks_raw, tz)
+        except FileNotFoundError:
+            pass  # not authenticated yet; AI proceeds without context
+        except Exception:
+            logger.warning("Failed to fetch calendar context; proceeding without it")
+
+        ai_res = parser.parse_message(
+            text, reference_time_str, Config.TIMEZONE, calendar_context=calendar_context
+        )
 
         # ── Query intent ──────────────────────────────────────────────
         if ai_res.intent == "query":
@@ -136,17 +189,36 @@ async def process_and_save(
             f"AI parsed {len(events)} event(s) and {len(tasks)} task(s). Processing..."
         )
 
+        # Enrich every event and task with the verbatim source message so it
+        # is permanently stored in Google Calendar / Tasks.
+        source_block = f"\n\n---\nSource message:\n{text.strip()}"
+        events = [
+            e.model_copy(update={"description": (e.description or "") + source_block})
+            for e in events
+        ]
+        tasks = [
+            t.model_copy(update={"notes": (t.notes or "") + source_block})
+            for t in tasks
+        ]
+
         calendar = CalendarService(user_id=user_id)
         success_reports = []
 
         # Process Tasks
+        existing_tasks = calendar.list_tasks(show_completed=False)
+        existing_titles = {t.get("title", "").strip().lower() for t in existing_tasks}
+
         for task in tasks:
-            created = calendar.create_task(
-                title=task.title, notes=task.notes, due_date=task.due_date
-            )
-            report = f"✅ *Task created*: {task.title}"
-            if task.due_date:
-                report += f" (Due: {task.due_date})"
+            task_title_key = task.title.strip().lower()
+            if task_title_key in existing_titles:
+                report = f"⚠️ *Task already exists*: {task.title} (skipped duplicate)"
+            else:
+                calendar.create_task(
+                    title=task.title, notes=task.notes, due_date=task.due_date
+                )
+                report = f"✅ *Task created*: {task.title}"
+                if task.due_date:
+                    report += f" (Due: {task.due_date})"
             success_reports.append(report)
 
         for idx, event in enumerate(events, start=1):
@@ -154,7 +226,7 @@ async def process_and_save(
 
             if is_dup:
                 time_str = format_event_time_range(candidate, tz)
-                tx_id = f"tx_{user_id}_{int(time.time())}_{idx}"
+                tx_id = f"tx_{user_id}_{uuid.uuid4().hex}"
                 context.user_data[tx_id] = {
                     "candidate_id": candidate["id"],
                     "event": event.model_dump(),
@@ -192,7 +264,7 @@ async def process_and_save(
                     event, exclude_event_id=candidate["id"]
                 )
 
-                tx_id = f"tx_{user_id}_{int(time.time())}_{idx}"
+                tx_id = f"tx_{user_id}_{uuid.uuid4().hex}"
                 context.user_data[tx_id] = {
                     "candidate_id": candidate["id"],
                     "event": event.model_dump(),
@@ -270,7 +342,7 @@ async def process_and_save(
                 new_time_str = format_event_time_range(event, tz)
 
                 if collisions:
-                    tx_id = f"tx_{user_id}_{int(time.time())}_{idx}"
+                    tx_id = f"tx_{user_id}_{uuid.uuid4().hex}"
                     context.user_data[tx_id] = {
                         "event": event.model_dump(),
                         "colliding_ids": [c["id"] for c in collisions],
@@ -321,8 +393,7 @@ async def process_and_save(
                         report += f"• *Start*: {event.start_datetime}\n• *End*: {event.end_datetime}\n"
                     if event.location:
                         report += f"• *Location*: {event.location}\n"
-                    if event.description:
-                        report += f"• *Description*: {event.description}\n"
+
                     report += f"🔗 [Open in Google Calendar]({event_link})"
                     success_reports.append(report)
 

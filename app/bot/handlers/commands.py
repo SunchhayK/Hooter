@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from google_auth_oauthlib.flow import Flow
 
 from app.bot.event_processor import query_and_display
+from app.bot.formatters import build_tasks_keyboard
 from app.bot.oauth.manager import OAuthManager
 from app.calendar.service import CalendarService, get_timezone, SCOPES
 from app.config import Config
@@ -160,3 +161,29 @@ async def command_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception:
         logger.exception("Failed to get connection status")
         await status_message.edit_text("❌ Error checking status. Please try again.")
+
+
+async def command_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    if not _check_auth(user_id, "tasks"):
+        await update.message.reply_text(_UNAUTHORIZED_MSG)
+        return
+
+    status_message = await update.message.reply_text("Fetching your tasks...")
+    try:
+        calendar = CalendarService(user_id=user_id)
+        tasks = calendar.list_tasks(show_completed=False)
+        text, reply_markup = build_tasks_keyboard(tasks)
+
+        await status_message.edit_text(
+            text, parse_mode="Markdown", reply_markup=reply_markup
+        )
+    except FileNotFoundError:
+        await status_message.edit_text(
+            "❌ Not Connected.\nPlease run /auth to authorize your Google Calendar."
+        )
+    except Exception:
+        logger.exception("Failed to list tasks")
+        await status_message.edit_text("❌ Error fetching tasks. Please try again.")
+
+

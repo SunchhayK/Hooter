@@ -12,6 +12,41 @@ from app.config import Config
 logger = logging.getLogger(__name__)
 
 
+def _extract_forward_sender(message) -> str | None:
+    """Extract a human-readable sender name from a forwarded message.
+
+    Returns None if the message is not forwarded.
+    Priority: forward_origin (TG Bot API v6.5+) > forward_from user > forward_sender_name.
+    """
+    origin = getattr(message, "forward_origin", None)
+    if origin is not None:
+        # forward_origin is a MessageOrigin union type
+        origin_type = getattr(origin, "type", None)
+        if origin_type == "user":
+            user = getattr(origin, "sender_user", None)
+            if user:
+                parts = filter(None, [user.first_name, user.last_name])
+                return " ".join(parts).strip() or None
+        if origin_type == "channel":
+            chat = getattr(origin, "chat", None)
+            if chat:
+                return getattr(chat, "title", None)
+        if origin_type == "chat":
+            author = getattr(origin, "author_signature", None)
+            chat = getattr(origin, "sender_chat", None)
+            return author or (getattr(chat, "title", None) if chat else None)
+        if origin_type == "hidden_user":
+            return getattr(origin, "sender_user_name", None)
+
+    # Fallback for older API versions
+    fwd_from = getattr(message, "forward_from", None)
+    if fwd_from:
+        parts = filter(None, [fwd_from.first_name, fwd_from.last_name])
+        return " ".join(parts).strip() or None
+
+    return getattr(message, "forward_sender_name", None)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Route incoming text/caption messages to OAuth exchange or AI → Calendar pipeline."""
     user_id = update.effective_user.id
@@ -61,7 +96,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
         return
 
+    # If this is a forwarded message, prepend sender context so the AI
+    # can embed it in the event description.
+    forward_sender = _extract_forward_sender(message)
+    if forward_sender:
+        logger.info(f"Forwarded message from '{forward_sender}' for user {user_id}")
+        cleaned_text = f"[Forwarded from: {forward_sender}]\n{cleaned_text}"
+
     status_message = await message.reply_text(
         "Parsing message with AI...", reply_to_message_id=message.message_id
     )
-    await process_and_save(user_id, text, status_message, context)
+    await process_and_save(user_id, cleaned_text, status_message, context)

@@ -5,6 +5,7 @@ import os
 import re
 import zoneinfo
 from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -77,6 +78,31 @@ class CalendarService:
         )
         return res.get("items", [])
 
+    @staticmethod
+    def _normalize_task_due(due_date: str) -> str | None:
+        """Convert any date/datetime string to RFC 3339 UTC midnight.
+
+        Google Tasks API requires due to be a full RFC 3339 timestamp at
+        midnight UTC, e.g. '2026-07-24T00:00:00.000Z'.
+        Accepts: 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM:SS', or already-UTC strings.
+        Returns None on parse failure so the field is simply omitted.
+        """
+        if not due_date:
+            return None
+        try:
+            # Try full ISO datetime first (may or may not have tz info)
+            dt = datetime.fromisoformat(due_date.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                # Bare date string
+                dt = datetime.strptime(due_date[:10], "%Y-%m-%d")
+            except ValueError:
+                logger.warning(f"Could not parse task due_date '{due_date}'; omitting.")
+                return None
+        # Normalize to midnight UTC
+        dt_utc = datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc)
+        return dt_utc.strftime("%Y-%m-%dT00:00:00.000Z")
+
     def create_task(
         self,
         title: str,
@@ -85,11 +111,13 @@ class CalendarService:
         tasklist: str = "@default",
     ) -> dict:
         """Create a new Google Task."""
+        # Google Tasks notes field max length is 8192 characters.
         body = {"title": title}
         if notes:
-            body["notes"] = notes
-        if due_date:
-            body["due"] = due_date
+            body["notes"] = notes[:8192]
+        normalized_due = self._normalize_task_due(due_date)
+        if normalized_due:
+            body["due"] = normalized_due
         return self.tasks_service.tasks().insert(tasklist=tasklist, body=body).execute()
 
     def complete_task(self, task_id: str, tasklist: str = "@default") -> dict:
@@ -195,8 +223,13 @@ class CalendarService:
         new_summary = event.summary.strip().lower()
 
         for c in candidates:
-            if c.get("summary", "").strip().lower() != new_summary:
-                continue
+            c_sum = c.get("summary", "").strip().lower()
+            # Accept: substring match (handles partial names / extra suffixes like '(Proposed)')
+            # or similarity ≥ 0.55 (handles abbreviations / slight typos)
+            # ponytail: SequenceMatcher O(n²) on short strings, fine here; upgrade to rapidfuzz if list grows large
+            if new_summary not in c_sum and c_sum not in new_summary:
+                if SequenceMatcher(None, new_summary, c_sum).ratio() < 0.55:
+                    continue
 
             c_start = c.get("start", {})
             if "date" in c_start:

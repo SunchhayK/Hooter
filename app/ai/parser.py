@@ -95,25 +95,63 @@ class AIResponse(BaseModel):
 class AIParser(ABC):
     @abstractmethod
     def parse_message(
-        self, text: str, reference_time_str: str, timezone: str
+        self,
+        text: str,
+        reference_time_str: str,
+        timezone: str,
+        calendar_context: str = "",
     ) -> AIResponse:
         pass
 
-    def _get_system_instruction(self, reference_time_str: str, timezone: str) -> str:
+    def _get_system_instruction(
+        self, reference_time_str: str, timezone: str, calendar_context: str = ""
+    ) -> str:
         return (
-            "You are a calendar and task bot assistant. Determine the user's intent: "
-            "'create' (to add new events or tasks), 'query' (to search/list schedule), or 'complete_task'.\n"
+            "You are a calendar and task management assistant. Parse the user's message and respond with structured JSON.\n"
             f"Current local time: {reference_time_str}\n"
-            f"User Timezone: {timezone}\n\n"
-            "Rules for intent='create':\n"
-            "1. Extract calendar event details into the 'events' list for blocked time.\n"
-            "2. Extract to-dos and reminders into the 'tasks' list.\n"
-            "3. Compute relative dates/times using the Current local time.\n\n"
-            "Rules for intent='query':\n"
-            "1. Set 'query_time_min' and/or 'query_time_max' to represent the requested range.\n"
-            "2. Set 'query_search' if looking for a specific topic.\n\n"
-            "Rules for intent='complete_task':\n"
-            "1. Extract the task(s) to complete into the 'tasks' list with the 'title' matching the task to be marked done."
+            f"User timezone: {timezone}\n\n"
+            "## Intent classification (pick exactly one)\n"
+            "- 'create': user wants to add events or tasks\n"
+            "- 'query': user wants to view or search their schedule\n"
+            "- 'complete_task': user wants to mark a task as done\n\n"
+            "## Rules for intent='create'\n\n"
+            "### Deciding: event vs task\n"
+            "Put in EVENTS (has a fixed time block on the calendar):\n"
+            "  - Meetings, appointments, sessions with a specific date/time\n"
+            "  - If the event is uncertain or proposed, append ' (Proposed)' to the summary\n"
+            "Put in TASKS (action items, things to do, deadlines):\n"
+            "  - 'Next steps', action items, things to confirm, things to check\n"
+            "  - Deadlines phrased as 'by X', 'within X', 'before X', 'no later than X'\n"
+            "  - Reminders without a strict time block\n"
+            "  - Do NOT create a task for every person mentioned; create one task per distinct action\n\n"
+            "### Date/time rules\n"
+            "  - Compute relative dates (today, tomorrow, next week) from Current local time\n"
+            "  - Absolute dates (e.g. '24th July') use the current year unless context says otherwise\n"
+            "  - A date range (e.g. '28th-31st July') → set start_date to the first date, end_date to the last date\n"
+            "  - A deadline date → set as task due_date, NOT as an event\n\n"
+            "### Meeting minutes pattern\n"
+            "If the message resembles meeting notes:\n"
+            "  - Scheduled meetings/sessions mentioned → EVENTS\n"
+            "  - 'Next Step' / action items section → TASKS (one task per distinct action, not per person)\n"
+            "  - Dates mentioned as 'proposed' or pending confirmation → EVENTS with '(Proposed)' suffix\n"
+            "  - Deadlines ('provide date by X', 'within X') → TASKS with due_date set\n\n"
+            "### Forwarded message rule\n"
+            "If the message starts with '[Forwarded from: <Name>]', include 'Forwarded from: <Name>' "
+            "as the first line of the description for every event and task created.\n\n"
+            "## Rules for intent='query'\n"
+            "  - Set query_time_min and/or query_time_max for the requested range\n"
+            "  - Set query_search if looking for a specific topic\n\n"
+            "## Rules for intent='complete_task'\n"
+            "  - Extract the task(s) to complete into the 'tasks' list\n"
+            "  - Use 'title' that matches the existing task name as closely as possible"
+            + (
+                f"\n\n{calendar_context}"
+                "\n\nIMPORTANT: Use the calendar context above to resolve vague references, "
+                "missing dates, or ambiguous event names. If the user's message refers to "
+                "an event or task from the calendar context, use its exact title and date."
+                if calendar_context
+                else ""
+            )
         )
 
 
@@ -130,11 +168,17 @@ class GeminiParser(AIParser):
         self.model_name = model_name
 
     def parse_message(
-        self, text: str, reference_time_str: str, timezone: str
+        self,
+        text: str,
+        reference_time_str: str,
+        timezone: str,
+        calendar_context: str = "",
     ) -> AIResponse:
         from google.genai import types
 
-        system_instruction = self._get_system_instruction(reference_time_str, timezone)
+        system_instruction = self._get_system_instruction(
+            reference_time_str, timezone, calendar_context
+        )
         response = self.client.models.generate_content(
             model=self.model_name,
             contents=text,
@@ -142,7 +186,10 @@ class GeminiParser(AIParser):
                 response_mime_type="application/json",
                 response_schema=AIResponse,
                 system_instruction=system_instruction,
+                # temperature=0 + top_k=1 + top_p=1 = greedy decoding (fully deterministic)
                 temperature=0.0,
+                top_k=1,
+                top_p=1.0,
             ),
         )
         data = json.loads(response.text)
@@ -157,9 +204,15 @@ class OpenAIParser(AIParser):
         self.model_name = model_name
 
     def parse_message(
-        self, text: str, reference_time_str: str, timezone: str
+        self,
+        text: str,
+        reference_time_str: str,
+        timezone: str,
+        calendar_context: str = "",
     ) -> AIResponse:
-        system_instruction = self._get_system_instruction(reference_time_str, timezone)
+        system_instruction = self._get_system_instruction(
+            reference_time_str, timezone, calendar_context
+        )
         response = self.client.beta.chat.completions.parse(
             model=self.model_name,
             messages=[
@@ -168,6 +221,8 @@ class OpenAIParser(AIParser):
             ],
             response_format=AIResponse,
             temperature=0.0,
+            # seed pins the RNG so identical inputs reproduce identical outputs
+            seed=0,
         )
         return response.choices[0].message.parsed
 

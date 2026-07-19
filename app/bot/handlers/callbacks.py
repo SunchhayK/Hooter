@@ -7,8 +7,10 @@ from telegram.ext import ContextTypes
 
 from app.ai.parser import ParsedEvent
 from app.bot.event_processor import process_and_save
+from app.bot.formatters import build_tasks_keyboard
 from app.calendar.service import CalendarService, get_timezone
 from app.config import Config
+
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +62,8 @@ async def handle_reschedule_callback(
     if not action:
         return
 
-    parts = rest.split("_")
-    tx_id = "_".join(parts[:4]) if len(parts) >= 4 else rest
+    # tx_id format: tx_{user_id}_{uuid4_hex} — rest is the complete key.
+    tx_id = rest
 
     tx_data = context.user_data.get(tx_id)
     if not tx_data:
@@ -218,15 +220,16 @@ async def handle_completetask_callback(
 ) -> None:
     """Handle completetask callback from reminder buttons."""
     query = update.callback_query
-    await query.answer()
 
     user_id = query.from_user.id
     if user_id not in Config.ALLOWED_USER_IDS:
         logger.warning(f"Unauthorized task complete attempt by User ID: {user_id}")
+        await query.answer("Unauthorized.")
         return
 
     data = query.data
     if not data.startswith("completetask_"):
+        await query.answer()
         return
 
     task_id = data.replace("completetask_", "")
@@ -235,15 +238,22 @@ async def handle_completetask_callback(
     try:
         task = calendar.complete_task(task_id)
         title = task.get("title", "Task")
+        await query.answer(f"✅ Completed: {title}")
 
-        # We can update the message to reflect it's done, or just send a new one
-        await query.message.reply_text(
-            f"✅ Marked as done: *{title}*", parse_mode="Markdown"
-        )
-
-        # Optional: Edit the original message to remove the button?
-        # That's a bit complex if there are multiple tasks in one message.
-        # So we just acknowledge it.
+        orig_text = query.message.text or ""
+        if "Active Tasks:" in orig_text:
+            # Refresh /tasks list inline
+            new_tasks = calendar.list_tasks(show_completed=False)
+            text, reply_markup = build_tasks_keyboard(new_tasks)
+            await query.message.edit_text(
+                text, parse_mode="Markdown", reply_markup=reply_markup
+            )
+        else:
+            # Edit single-task confirmation/reminder message to show completed
+            await query.message.edit_text(
+                f"✅ Marked as done: *{title}*", parse_mode="Markdown", reply_markup=None
+            )
     except Exception:
         logger.exception(f"Failed to complete task {task_id}")
-        await query.message.reply_text("❌ Error completing task.")
+        await query.answer("❌ Error completing task.", show_alert=True)
+
