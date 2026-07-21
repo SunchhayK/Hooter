@@ -190,6 +190,24 @@ def test_task_parsing_schema():
     print("✓ Task schema validation works.")
 
 
+def test_callback_data_length_limit():
+    """Verify inline keyboard callback_data length does not exceed Telegram 64-byte limit."""
+    import uuid
+
+    tx_id = f"tx_{uuid.uuid4().hex[:12]}"
+    callbacks = [
+        f"create_reschedule_{tx_id}",
+        f"confirm_reschedule_{tx_id}",
+        f"forcecreate_reschedule_{tx_id}",
+        f"mergeall_reschedule_{tx_id}",
+        f"deleteall_reschedule_{tx_id}",
+        f"cancel_reschedule_{tx_id}",
+    ]
+    for cb in callbacks:
+        assert len(cb.encode("utf-8")) <= 64, f"Callback data exceeds 64 bytes: {cb}"
+    print("✓ Callback data length limit test passed.")
+
+
 if __name__ == "__main__":
     print("Running self-checks...")
     test_pydantic_schema()
@@ -198,4 +216,6 @@ if __name__ == "__main__":
     test_gemini_parser_mock()
     test_query_intent_mock()
     test_reschedule_duplicate_and_collision()
+    test_callback_data_length_limit()
     print("All checks passed successfully.")
+

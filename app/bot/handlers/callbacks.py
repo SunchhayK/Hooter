@@ -62,7 +62,7 @@ async def handle_reschedule_callback(
     if not action:
         return
 
-    # tx_id format: tx_{user_id}_{uuid4_hex} — rest is the complete key.
+    # tx_id format: tx_{short_uuid4_hex} — rest is the complete key.
     tx_id = rest
 
     tx_data = context.user_data.get(tx_id)

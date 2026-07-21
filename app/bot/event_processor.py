@@ -226,7 +226,7 @@ async def process_and_save(
 
             if is_dup:
                 time_str = format_event_time_range(candidate, tz)
-                tx_id = f"tx_{user_id}_{uuid.uuid4().hex}"
+                tx_id = f"tx_{uuid.uuid4().hex[:12]}"
                 context.user_data[tx_id] = {
                     "candidate_id": candidate["id"],
                     "event": event.model_dump(),
@@ -264,7 +264,7 @@ async def process_and_save(
                     event, exclude_event_id=candidate["id"]
                 )
 
-                tx_id = f"tx_{user_id}_{uuid.uuid4().hex}"
+                tx_id = f"tx_{uuid.uuid4().hex[:12]}"
                 context.user_data[tx_id] = {
                     "candidate_id": candidate["id"],
                     "event": event.model_dump(),
@@ -342,7 +342,7 @@ async def process_and_save(
                 new_time_str = format_event_time_range(event, tz)
 
                 if collisions:
-                    tx_id = f"tx_{user_id}_{uuid.uuid4().hex}"
+                    tx_id = f"tx_{uuid.uuid4().hex[:12]}"
                     context.user_data[tx_id] = {
                         "event": event.model_dump(),
                         "colliding_ids": [c["id"] for c in collisions],
